@@ -4,109 +4,263 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{% block title %}Photo Backup Organizer{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <!-- HTMX – no build step required -->
   <script src="https://unpkg.com/htmx.org@1.9.12" crossorigin="anonymous"></script>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: system-ui, -apple-system, sans-serif;
-      background: #f4f6f9;
-      color: #1a1a2e;
-      min-height: 100vh;
+    /* ── Design tokens ── */
+    :root {
+      /* Palette – slate-blue NAS shell + warm photo amber accent */
+      --clr-bg:          #f0f2f5;
+      --clr-surface:     #ffffff;
+      --clr-surface-2:   #f8f9fb;
+      --clr-border:      #dde1e9;
+      --clr-header-bg:   #1c2a3a;   /* deep Synology slate          */
+      --clr-header-acc:  #3d9be9;   /* Synology-blue highlight      */
+      --clr-accent:      #d97706;   /* amber – lens / shutter gold  */
+      --clr-accent-lt:   #fef3c7;
+      --clr-text:        #1e2b3c;
+      --clr-text-2:      #4b5a6e;
+      --clr-text-3:      #8a96a6;
+      --clr-primary:     #2563eb;
+      --clr-primary-dk:  #1d4ed8;
+      --clr-success:     #16a34a;
+      --clr-success-lt:  #dcfce7;
+      --clr-warn:        #b45309;
+      --clr-warn-lt:     #fef3c7;
+      --clr-danger:      #dc2626;
+      --clr-danger-lt:   #fee2e2;
+      --clr-photo:       #1e6fbf;
+      --clr-photo-lt:    #dbeafe;
+      --clr-video:       #92400e;
+      --clr-video-lt:    #fef3c7;
+      /* Typography */
+      --font:            'Inter', system-ui, -apple-system, sans-serif;
+      --font-size-base:  1rem;       /* was 0.875 rem – bumped up   */
+      --font-size-sm:    0.9rem;
+      --font-size-xs:    0.8rem;
+      /* Spacing */
+      --radius:          8px;
+      --shadow-card:     0 1px 4px rgba(0,0,0,.07), 0 4px 16px rgba(0,0,0,.05);
     }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font);
+      font-size: var(--font-size-base);
+      background: var(--clr-bg);
+      color: var(--clr-text);
+      min-height: 100vh;
+      line-height: 1.55;
+    }
+
+    /* ── Header ── */
     header {
-      background: #1a1a2e;
+      background: var(--clr-header-bg);
       color: #fff;
-      padding: 0.9rem 1.5rem;
+      padding: 0 1.5rem;
+      height: 56px;
       display: flex;
       align-items: center;
       gap: 1rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+      position: sticky;
+      top: 0;
+      z-index: 100;
     }
-    header h1 { font-size: 1.2rem; font-weight: 600; }
-    nav a {
-      color: #a8b4c8;
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: .55rem;
+      font-size: 1.05rem;
+      font-weight: 600;
+      letter-spacing: -.01em;
+      color: #fff;
       text-decoration: none;
-      margin-left: 1.2rem;
-      font-size: 0.9rem;
     }
-    nav a:hover { color: #fff; }
-    main { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
+    /* Aperture icon drawn in CSS */
+    .aperture {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: 2px solid var(--clr-header-acc);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .aperture::after {
+      content: '';
+      width: 10px;
+      height: 10px;
+      background: var(--clr-header-acc);
+      border-radius: 50%;
+    }
+    .header-sub {
+      font-size: var(--font-size-xs);
+      color: #7a9bbf;
+      font-weight: 400;
+      margin-left: .1rem;
+    }
+    nav { margin-left: auto; display: flex; gap: .1rem; }
+    nav a {
+      color: #a0b8d0;
+      text-decoration: none;
+      padding: .35rem .85rem;
+      border-radius: 5px;
+      font-size: var(--font-size-sm);
+      font-weight: 500;
+      transition: background .15s, color .15s;
+    }
+    nav a:hover  { color: #fff; background: rgba(255,255,255,.08); }
+    nav a.active { color: #fff; background: rgba(61,155,233,.25); }
+
+    /* ── Layout ── */
+    main { max-width: 1280px; margin: 1.75rem auto; padding: 0 1.2rem; }
+
+    /* ── Cards ── */
     .card {
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+      background: var(--clr-surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--clr-border);
+      box-shadow: var(--shadow-card);
       padding: 1.5rem;
-      margin-bottom: 1.5rem;
+      margin-bottom: 1.4rem;
     }
-    h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; color: #1a1a2e; }
-    h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.6rem; color: #344054; }
+
+    /* ── Typography ── */
+    h2 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      color: var(--clr-text);
+      display: flex;
+      align-items: center;
+      gap: .45rem;
+    }
+    h2 .h2-icon { color: var(--clr-accent); font-size: 1rem; }
+    h3 { font-size: 1rem; font-weight: 600; margin-bottom: .6rem; color: var(--clr-text-2); }
+
+    /* ── Buttons ── */
     .btn {
-      display: inline-block;
-      padding: 0.5rem 1.1rem;
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      padding: .5rem 1.1rem;
       border-radius: 6px;
-      border: none;
+      border: 1px solid transparent;
       cursor: pointer;
-      font-size: 0.875rem;
+      font-family: var(--font);
+      font-size: var(--font-size-sm);
       font-weight: 500;
       text-decoration: none;
-      transition: filter 0.15s;
+      white-space: nowrap;
+      transition: filter .15s, box-shadow .15s;
+      line-height: 1.4;
     }
-    .btn:hover { filter: brightness(0.92); }
-    .btn-primary   { background: #3b5bdb; color: #fff; }
-    .btn-secondary { background: #e9ecef; color: #344054; }
-    .btn-success   { background: #2f9e44; color: #fff; }
-    .btn-danger    { background: #e03131; color: #fff; }
-    .btn-sm { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
+    .btn:hover { filter: brightness(.93); box-shadow: 0 2px 6px rgba(0,0,0,.1); }
+    .btn-primary   { background: var(--clr-primary);   color: #fff;  border-color: var(--clr-primary-dk); }
+    .btn-secondary { background: var(--clr-surface-2); color: var(--clr-text-2); border-color: var(--clr-border); }
+    .btn-success   { background: var(--clr-success);   color: #fff;  border-color: #14803c; }
+    .btn-danger    { background: var(--clr-danger);    color: #fff;  border-color: #b91c1c; }
+    .btn-sm { padding: .3rem .7rem; font-size: var(--font-size-xs); }
+
+    /* ── Badges ── */
     .badge {
-      display: inline-block;
-      padding: 0.15rem 0.5rem;
+      display: inline-flex;
+      align-items: center;
+      padding: .2rem .55rem;
       border-radius: 4px;
-      font-size: 0.75rem;
+      font-size: var(--font-size-xs);
       font-weight: 600;
+      letter-spacing: .01em;
     }
-    .badge-photo  { background: #d0ebff; color: #1864ab; }
-    .badge-video  { background: #fff3bf; color: #7c5f00; }
-    .badge-move   { background: #d3f9d8; color: #1b5e20; }
-    .badge-rename { background: #fff3bf; color: #7c5f00; }
-    .badge-skip   { background: #ffe3e3; color: #c62828; }
-    .badge-error  { background: #ffe3e3; color: #c62828; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
-    th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #e9ecef; }
-    th { background: #f8f9fa; font-weight: 600; color: #495057; }
-    .thumb { width: 60px; height: 60px; object-fit: cover; border-radius: 4px; background: #e9ecef; }
-    .alert { padding: 0.8rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.9rem; }
-    .alert-info    { background: #d0ebff; color: #1864ab; }
-    .alert-success { background: #d3f9d8; color: #1b5e20; }
-    .alert-warn    { background: #fff3bf; color: #7c5f00; }
-    .alert-error   { background: #ffe3e3; color: #c62828; }
+    .badge-photo  { background: var(--clr-photo-lt); color: var(--clr-photo); }
+    .badge-video  { background: var(--clr-video-lt); color: var(--clr-video); }
+    .badge-move   { background: var(--clr-success-lt); color: var(--clr-success); }
+    .badge-rename { background: var(--clr-warn-lt);    color: var(--clr-warn); }
+    .badge-skip   { background: var(--clr-danger-lt);  color: var(--clr-danger); }
+    .badge-error  { background: var(--clr-danger-lt);  color: var(--clr-danger); }
+
+    /* ── Tables ── */
+    table { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
+    th, td { text-align: left; padding: .55rem .8rem; border-bottom: 1px solid var(--clr-border); }
+    th { background: var(--clr-surface-2); font-weight: 600; color: var(--clr-text-2); font-size: var(--font-size-xs); text-transform: uppercase; letter-spacing: .04em; }
+    tr:last-child td { border-bottom: none; }
+    .thumb { width: 60px; height: 60px; object-fit: cover; border-radius: 5px; background: var(--clr-border); }
+
+    /* ── Alerts ── */
+    .alert {
+      padding: .85rem 1.1rem;
+      border-radius: 7px;
+      margin-bottom: 1rem;
+      font-size: var(--font-size-sm);
+      border-left: 4px solid;
+    }
+    .alert-info    { background: #eff6ff; color: #1e40af; border-color: #3b82f6; }
+    .alert-success { background: var(--clr-success-lt); color: #14532d; border-color: var(--clr-success); }
+    .alert-warn    { background: var(--clr-warn-lt);    color: #78350f; border-color: #f59e0b; }
+    .alert-error   { background: var(--clr-danger-lt);  color: #7f1d1d; border-color: var(--clr-danger); }
+
+    /* ── Spinner ── */
     .spinner {
       display: inline-block;
       width: 1em; height: 1em;
       border: 2px solid currentColor;
       border-right-color: transparent;
       border-radius: 50%;
-      animation: spin 0.6s linear infinite;
+      animation: spin .65s linear infinite;
       vertical-align: middle;
-      margin-right: 0.4em;
+      margin-right: .4em;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     .htmx-indicator { display: none; }
     .htmx-request .htmx-indicator { display: inline; }
-    select, input[type=text] {
-      border: 1px solid #ced4da;
-      border-radius: 5px;
-      padding: 0.35rem 0.6rem;
-      font-size: 0.875rem;
-      background: #fff;
+
+    /* ── Form controls ── */
+    select, input[type=text], input[type=range] {
+      border: 1px solid var(--clr-border);
+      border-radius: 6px;
+      padding: .38rem .65rem;
+      font-family: var(--font);
+      font-size: var(--font-size-sm);
+      background: var(--clr-surface);
+      color: var(--clr-text);
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
     }
-    .dest-picker { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-    footer { text-align: center; padding: 2rem 0; font-size: 0.8rem; color: #868e96; }
+    select:focus, input[type=text]:focus {
+      border-color: var(--clr-primary);
+      box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+    }
+    input[type=range] { padding: .1rem 0; cursor: pointer; accent-color: var(--clr-accent); }
+
+    /* ── Misc ── */
+    .dest-picker { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+    a { color: var(--clr-primary); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    footer {
+      text-align: center;
+      padding: 2rem 0 2.5rem;
+      font-size: var(--font-size-xs);
+      color: var(--clr-text-3);
+      border-top: 1px solid var(--clr-border);
+      margin-top: .5rem;
+    }
   </style>
   {% block extra_head %}{% endblock %}
 </head>
 <body>
 <header>
-  <h1>📷 Photo Backup Organizer</h1>
+  <a href="/" class="header-brand">
+    <div class="aperture"></div>
+    Photo Backup Organizer
+    <span class="header-sub">NAS Edition</span>
+  </a>
   <nav>
     <a href="/">Scan</a>
     <a href="/review">Review</a>
@@ -116,6 +270,6 @@
 <main>
   {% block content %}{% endblock %}
 </main>
-<footer>Photo Backup Organizer</footer>
+<footer>Photo Backup Organizer &mdash; NAS Edition</footer>
 </body>
 </html>
