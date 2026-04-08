@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Photo Backup Organizer{% endblock %}</title>
+  <!-- HTMX – no build step required -->
+  <script src="https://unpkg.com/htmx.org@1.9.12" crossorigin="anonymous"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f4f6f9;
+      color: #1a1a2e;
+      min-height: 100vh;
+    }
+    header {
+      background: #1a1a2e;
+      color: #fff;
+      padding: 0.9rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    header h1 { font-size: 1.2rem; font-weight: 600; }
+    nav a {
+      color: #a8b4c8;
+      text-decoration: none;
+      margin-left: 1.2rem;
+      font-size: 0.9rem;
+    }
+    nav a:hover { color: #fff; }
+    main { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; color: #1a1a2e; }
+    h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.6rem; color: #344054; }
+    .btn {
+      display: inline-block;
+      padding: 0.5rem 1.1rem;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      text-decoration: none;
+      transition: filter 0.15s;
+    }
+    .btn:hover { filter: brightness(0.92); }
+    .btn-primary   { background: #3b5bdb; color: #fff; }
+    .btn-secondary { background: #e9ecef; color: #344054; }
+    .btn-success   { background: #2f9e44; color: #fff; }
+    .btn-danger    { background: #e03131; color: #fff; }
+    .btn-sm { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-photo  { background: #d0ebff; color: #1864ab; }
+    .badge-video  { background: #fff3bf; color: #7c5f00; }
+    .badge-move   { background: #d3f9d8; color: #1b5e20; }
+    .badge-rename { background: #fff3bf; color: #7c5f00; }
+    .badge-skip   { background: #ffe3e3; color: #c62828; }
+    .badge-error  { background: #ffe3e3; color: #c62828; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #e9ecef; }
+    th { background: #f8f9fa; font-weight: 600; color: #495057; }
+    .thumb { width: 60px; height: 60px; object-fit: cover; border-radius: 4px; background: #e9ecef; }
+    .alert { padding: 0.8rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.9rem; }
+    .alert-info    { background: #d0ebff; color: #1864ab; }
+    .alert-success { background: #d3f9d8; color: #1b5e20; }
+    .alert-warn    { background: #fff3bf; color: #7c5f00; }
+    .alert-error   { background: #ffe3e3; color: #c62828; }
+    .spinner {
+      display: inline-block;
+      width: 1em; height: 1em;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      vertical-align: middle;
+      margin-right: 0.4em;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .htmx-indicator { display: none; }
+    .htmx-request .htmx-indicator { display: inline; }
+    select, input[type=text] {
+      border: 1px solid #ced4da;
+      border-radius: 5px;
+      padding: 0.35rem 0.6rem;
+      font-size: 0.875rem;
+      background: #fff;
+    }
+    .dest-picker { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    footer { text-align: center; padding: 2rem 0; font-size: 0.8rem; color: #868e96; }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+<header>
+  <h1>📷 Photo Backup Organizer</h1>
+  <nav>
+    <a href="/">Scan</a>
+    <a href="/review">Review</a>
+    <a href="/log">Log</a>
+  </nav>
+</header>
+<main>
+  {% block content %}{% endblock %}
+</main>
+<footer>Photo Backup Organizer</footer>
+</body>
+</html>

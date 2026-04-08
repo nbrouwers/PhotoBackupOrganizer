@@ -1,0 +1,62 @@
+# Photo Backup Organizer – example configuration
+# Copy this file to config/config.yaml and adjust the values for your setup.
+# A container restart is required for changes to take effect (FR-24).
+
+# ── Source devices ──────────────────────────────────────────────────────────
+# One entry per phone / backup source.
+# Each path must be the root of that device's backup folder as seen from
+# inside the container (i.e. the left side of the volume mount in
+# docker-compose.yml is the NAS path; the right side is the container path).
+devices:
+  - label: "Alice's Phone"
+    path: /backups/alice
+  - label: "Bob's Phone"
+    path: /backups/bob
+
+# ── Library roots ───────────────────────────────────────────────────────────
+library:
+  photos_root: /photos
+  videos_root: /videos
+
+# ── Supported file extensions ───────────────────────────────────────────────
+# Extensions are case-insensitive.  Add or remove entries to match your
+# phone's output formats.
+extensions:
+  photos:
+    - .jpg
+    - .jpeg
+    - .png
+    - .heic
+    - .heif
+    - .dng
+    - .raw
+    - .arw
+    - .nef
+    - .cr2
+    - .cr3
+    - .webp
+  videos:
+    - .mp4
+    - .mov
+    - .m4v
+    - .mkv
+    - .avi
+    - .3gp
+    - .webm
+
+# ── Application settings ─────────────────────────────────────────────────────
+server:
+  port: 8000
+
+# ── Thumbnail cache ───────────────────────────────────────────────────────────
+cache:
+  path: /cache
+  # Maximum thumbnail dimension in pixels (thumbnails are square)
+  thumb_size: 300
+
+# ── Security (optional) ───────────────────────────────────────────────────────
+# Uncomment and fill in to enable HTTP Basic Authentication on the web UI.
+# security:
+#   basic_auth:
+#     username: admin
+#     password: changeme

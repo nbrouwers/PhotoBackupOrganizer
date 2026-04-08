@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Scan – Photo Backup Organizer{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Backup Scan</h2>
+  <p style="color:#495057;font-size:.9rem;margin-bottom:1rem;">
+    Scans all configured backup folders for new, unprocessed media files.
+    Already-processed files are skipped automatically.
+  </p>
+  <button
+      class="btn btn-primary"
+      hx-post="/api/scan"
+      hx-target="#scan-status"
+      hx-swap="innerHTML"
+      hx-indicator="#scan-spinner">
+    <span class="htmx-indicator spinner" id="scan-spinner"></span>
+    Scan now
+  </button>
+  <a href="/review" class="btn btn-secondary" style="margin-left:.5rem;">Go to Review →</a>
+</div>
+
+<div id="scan-status">
+  {% if progress.done %}
+    <div class="alert alert-success">Last scan complete – <a href="/review">review results</a>.</div>
+  {% elif progress.running %}
+    <div class="alert alert-info"
+         hx-get="/api/scan/status"
+         hx-trigger="every 2s"
+         hx-target="#scan-status"
+         hx-swap="innerHTML">
+      <span class="spinner"></span>
+      Scanning… device: <strong>{{ progress.current_device or '–' }}</strong>
+      &nbsp;|&nbsp; found: <strong>{{ progress.found }}</strong>
+    </div>
+  {% else %}
+    <div class="alert alert-info">No scan has been run yet. Press <em>Scan now</em> to start.</div>
+  {% endif %}
+</div>
+{% endblock %}

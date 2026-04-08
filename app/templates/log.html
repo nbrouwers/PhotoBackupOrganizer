@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Log – Photo Backup Organizer{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>Operation Log</h2>
+
+  {% if summary %}
+  <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:1rem;">
+    <span class="badge badge-move">Moved: {{ summary.move or 0 }}</span>
+    <span class="badge badge-rename">Renamed: {{ summary.rename or 0 }}</span>
+    <span class="badge badge-skip">Skipped (duplicate): {{ summary.skip_duplicate or 0 }}</span>
+    <span class="badge badge-error">Errors: {{ summary.error or 0 }}</span>
+  </div>
+  {% endif %}
+
+  <div style="display:flex;gap:.6rem;margin-bottom:1rem;">
+    <a href="/" class="btn btn-primary">← New scan</a>
+    <button class="btn btn-secondary"
+            hx-get="/api/move/log"
+            hx-target="#log-table-body"
+            hx-swap="innerHTML">
+      ↻ Refresh log
+    </button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Timestamp</th>
+        <th>Action</th>
+        <th>Source</th>
+        <th>Destination</th>
+        <th>Note / Error</th>
+      </tr>
+    </thead>
+    <tbody id="log-table-body"
+           hx-get="/api/move/log"
+           hx-trigger="load"
+           hx-swap="innerHTML">
+      {% if entries %}
+        {% for e in entries %}
+        <tr>
+          <td style="white-space:nowrap;font-size:.8rem;">{{ e.timestamp }}</td>
+          <td>
+            {% if e.action == 'move' %}
+              <span class="badge badge-move">move</span>
+            {% elif e.action == 'rename' %}
+              <span class="badge badge-rename">rename</span>
+            {% elif e.action == 'skip_duplicate' %}
+              <span class="badge badge-skip">skip</span>
+            {% else %}
+              <span class="badge badge-error">{{ e.action }}</span>
+            {% endif %}
+          </td>
+          <td style="font-size:.8rem;word-break:break-all;">{{ e.src }}</td>
+          <td style="font-size:.8rem;word-break:break-all;">{{ e.dest }}</td>
+          <td style="font-size:.8rem;">{{ e.note or e.error or '' }}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="5" style="text-align:center;color:#868e96;padding:1.5rem;">
+          No log entries yet.
+        </td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

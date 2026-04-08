@@ -1,0 +1,513 @@
+{% extends "base.html" %}
+{% block title %}Review – Photo Backup Organizer{% endblock %}
+{% block extra_head %}
+<style>
+  #review-layout {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 1rem;
+    align-items: start;
+  }
+  /* ── File grid ── */
+  #files-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: .6rem;
+  }
+  .file-card {
+    background: #fff;
+    border: 2px solid #dee2e6;
+    border-radius: 8px;
+    padding: .4rem;
+    cursor: grab;
+    user-select: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .file-card:hover    { border-color: #748ffc; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+  .file-card.dragging { opacity: .35; cursor: grabbing; }
+  .file-card.assigned { border-color: #2f9e44; }
+  .file-card img {
+    width: 100%; aspect-ratio: 4/3; object-fit: cover;
+    border-radius: 4px; background: #f1f3f5; display: block;
+  }
+  .card-name { font-size: .68rem; color: #344054; margin-top: .25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-meta { font-size: .62rem; color: #868e96; }
+  .dest-badge {
+    font-size: .6rem; background: #d3f9d8; color: #2f9e44;
+    border-radius: 3px; padding: .1rem .3rem; margin-top: .2rem;
+    display: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    cursor: pointer;
+  }
+  .dest-badge::before { content: "→ "; }
+  .file-card.assigned .dest-badge { display: block; }
+  /* ── Destination panel ── */
+  #dest-panel {
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 4rem);
+    overflow-y: auto;
+  }
+  .dest-zone {
+    border: 2px dashed #ced4da;
+    border-radius: 6px;
+    padding: .5rem .65rem;
+    margin-bottom: .4rem;
+    transition: background .1s, border-color .15s;
+  }
+  .dest-zone.drag-over { background: #e7f5ff; border-color: #3b5bdb; border-style: solid; }
+  .dest-zone-header { display: flex; justify-content: space-between; align-items: center; font-size: .78rem; font-weight: 600; color: #344054; }
+  .dest-count { font-size: .65rem; background: #e9ecef; border-radius: 10px; padding: .1rem .4rem; color: #495057; min-width: 18px; text-align: center; }
+  .zone-thumbs { display: flex; flex-wrap: wrap; gap: .2rem; margin-top: .3rem; }
+  .zone-thumb { width: 32px; height: 32px; object-fit: cover; border-radius: 3px; cursor: pointer; }
+  .dest-section-title { font-size: .65rem; text-transform: uppercase; letter-spacing: .06em; color: #adb5bd; margin: .6rem 0 .25rem; }
+  .new-zone-row { display: flex; gap: .4rem; margin-top: .4rem; }
+  .new-zone-row input { flex: 1; min-width: 0; }
+  /* ── Top bar ── */
+  #top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: .8rem; flex-wrap: wrap; gap: .5rem; }
+  /* ── Multi-select ── */
+  .file-card.selected { border-color: #3b5bdb; box-shadow: 0 0 0 3px rgba(59,91,219,.22); }
+  .file-card.selected.assigned { border-color: #2f9e44; box-shadow: 0 0 0 3px rgba(47,158,68,.22); }
+  /* ── Lightbox ── */
+  #lightbox {
+    position: fixed; inset: 0; background: rgba(0,0,0,.88);
+    z-index: 1000; display: none;
+    align-items: center; justify-content: center; flex-direction: column;
+  }
+  #lb-close {
+    position: absolute; top: 1rem; right: 1.2rem;
+    background: none; border: none; color: #fff;
+    font-size: 2rem; cursor: pointer; line-height: 1;
+  }
+  #lb-caption { color: #adb5bd; font-size: .82rem; margin-bottom: .5rem; max-width: 90vw; text-align: center; }
+  #lb-body img, #lb-body video { max-width: 90vw; max-height: 83vh; border-radius: 6px; object-fit: contain; }
+</style>
+{% endblock %}
+{% block content %}
+
+{% if not devices %}
+  <div class="alert alert-warn">
+    No unprocessed files found. <a href="/">Run a scan first.</a>
+  </div>
+{% else %}
+
+<script>
+const SCAN_DATA   = {{ scan_json | safe }};
+const PHOTOS_ROOT = {{ photos_root | tojson }};
+const VIDEOS_ROOT = {{ videos_root | tojson }};
+</script>
+
+<!-- Lightbox overlay -->
+<div id="lightbox" onclick="closeLightboxIfBg(event)">
+  <button id="lb-close" onclick="closeLightbox()" title="Close (Esc)">✕</button>
+  <div id="lb-caption"></div>
+  <div id="lb-body"></div>
+</div>
+
+<div id="top-bar">
+  <div>
+    <span id="unassigned-count" style="color:#e03131;font-weight:600;"></span>
+    <span id="assigned-count"   style="color:#2f9e44;font-weight:600;margin-left:.8rem;"></span>
+  </div>
+  <div style="display:flex;gap:.5rem;">
+    <button class="btn btn-primary" onclick="submitForm('dry-run')">🔍 Dry-run preview</button>
+    <button class="btn btn-success" onclick="submitForm('execute')">▶ Move now</button>
+  </div>
+</div>
+
+<div id="review-layout">
+
+  <!-- LEFT: draggable file grid -->
+  <div>
+    <div class="card" style="padding:1rem;">
+      <h2 style="margin-bottom:.6rem;">
+        Files to assign
+        <span style="font-size:.8rem;font-weight:400;color:#868e96;">— click to select · shift+click to range-select · drag to assign · double-click to preview</span>
+      </h2>
+      <div id="files-grid">
+        {% for device in devices %}
+          {% for dg in device.date_groups %}
+            {% for f in dg.files %}
+            <div class="file-card"
+                 draggable="true"
+                 data-src="{{ f.path }}"
+                 data-media="{{ f.media_type }}"
+                 data-date="{{ f.capture_date }}"
+                 data-quarterly="{{ f.quarterly_dest }}"
+                 data-device="{{ device.label }}">
+              <img src="/thumbnails?src={{ f.path | urlencode(safe='') }}"
+                   alt="{{ f.filename }}"
+                   loading="lazy"
+                   onerror="this.style.display='none'" />
+              <div class="card-name" title="{{ f.filename }}">{{ f.filename }}</div>
+              <div class="card-meta">{{ f.capture_date }} · {{ device.label }}</div>
+              <div class="dest-badge" onclick="event.stopPropagation(); unassign(this.closest('.file-card'))">unassign</div>
+            </div>
+            {% endfor %}
+          {% endfor %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: sticky destination panel -->
+  <div id="dest-panel">
+    <div class="card" style="padding:1rem;">
+      <h2 style="margin-bottom:.4rem;">Destinations</h2>
+
+      <div class="dest-section-title">Quarterly (auto)</div>
+      <div id="quarterly-zones"></div>
+
+      <div class="dest-section-title">Event folders</div>
+      <div id="event-zones"><em style="font-size:.75rem;color:#adb5bd;">Loading…</em></div>
+
+      <div class="dest-section-title">Add custom folder</div>
+      <div class="new-zone-row">
+        <input type="text" id="new-zone-name" placeholder="Folder name…" />
+        <button class="btn btn-secondary btn-sm" onclick="addCustomZone()">+ Add</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div id="result-area" style="margin-top:1rem;"></div>
+
+{% endif %}
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+const assignments = new Map(); // src_path → { destDir, destLabel }
+const selected    = new Set(); // src_path strings currently selected
+let _lastClickedSrc = null;   // for shift+click range
+let _dragSrcs       = [];     // src_paths being dragged (1 or many)
+
+// ── Selection helpers ────────────────────────────────────────────────────────
+function allCards() { return Array.from(document.querySelectorAll('.file-card')); }
+function cardBySrc(src) { return document.querySelector(`.file-card[data-src="${CSS.escape(src)}"]`); }
+
+function clearSelection() {
+  selected.forEach(s => cardBySrc(s)?.classList.remove('selected'));
+  selected.clear();
+}
+
+function selectOnly(card) {
+  clearSelection();
+  selected.add(card.dataset.src);
+  card.classList.add('selected');
+  _lastClickedSrc = card.dataset.src;
+}
+
+function toggleSelect(card) {
+  if (selected.has(card.dataset.src)) {
+    selected.delete(card.dataset.src);
+    card.classList.remove('selected');
+  } else {
+    selected.add(card.dataset.src);
+    card.classList.add('selected');
+  }
+  _lastClickedSrc = card.dataset.src;
+}
+
+function rangeSelectTo(card) {
+  const cards = allCards();
+  const toIdx   = cards.indexOf(card);
+  const fromIdx = _lastClickedSrc ? cards.findIndex(c => c.dataset.src === _lastClickedSrc) : 0;
+  const [lo, hi] = [Math.min(toIdx, fromIdx), Math.max(toIdx, fromIdx)];
+  for (let i = lo; i <= hi; i++) {
+    selected.add(cards[i].dataset.src);
+    cards[i].classList.add('selected');
+  }
+  _lastClickedSrc = card.dataset.src;
+}
+
+// ── Lightbox ─────────────────────────────────────────────────────────────────
+function openLightbox(card) {
+  const src     = card.dataset.src;
+  const media   = card.dataset.media;
+  const caption = card.querySelector('.card-name')?.textContent || src;
+  const lb      = document.getElementById('lightbox');
+  document.getElementById('lb-caption').textContent = caption;
+  const body = document.getElementById('lb-body');
+  body.innerHTML = '';
+  if (media === 'video') {
+    const v = document.createElement('video');
+    v.controls = true;
+    v.autoplay = true;
+    v.src      = '/media?src=' + encodeURIComponent(src);
+    body.appendChild(v);
+  } else {
+    const img = document.createElement('img');
+    img.src = '/media?src=' + encodeURIComponent(src);
+    img.alt = caption;
+    body.appendChild(img);
+  }
+  lb.style.display = 'flex';
+}
+
+function closeLightbox() {
+  const body = document.getElementById('lb-body');
+  const v = body.querySelector('video');
+  if (v) { v.pause(); v.src = ''; }
+  body.innerHTML = '';
+  document.getElementById('lightbox').style.display = 'none';
+}
+
+function closeLightboxIfBg(e) {
+  if (e.target === document.getElementById('lightbox')) closeLightbox();
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
+// ── Build quarterly zones from embedded scan data ────────────────────────────
+function buildQuarterlyZones() {
+  const seen  = new Set();
+  const zones = [];
+  for (const device of SCAN_DATA) {
+    for (const dg of device.date_groups) {
+      for (const f of dg.files) {
+        if (!seen.has(f.quarterly_dest)) {
+          seen.add(f.quarterly_dest);
+          zones.push({ dir: f.quarterly_dest, label: quartLabel(f.quarterly_dest) });
+        }
+      }
+    }
+  }
+  zones.sort((a, b) => a.label.localeCompare(b.label));
+  const container = document.getElementById('quarterly-zones');
+  for (const z of zones) addDestZone(container, z.dir, z.label);
+}
+
+function quartLabel(p) {
+  const parts = p.replace(/\\/g, '/').split('/').filter(Boolean);
+  return parts.length >= 2 ? parts.slice(-2).join('/') : p;
+}
+
+// ── Load event zones from API ────────────────────────────────────────────────
+async function loadEventZones() {
+  const container = document.getElementById('event-zones');
+  try {
+    const data = await fetch('/api/destinations/all-event-zones').then(r => r.json());
+    container.innerHTML = '';
+    if (!data.zones.length) {
+      container.innerHTML = '<em style="font-size:.75rem;color:#adb5bd;">No event folders found.</em>';
+      return;
+    }
+    for (const z of data.zones) addDestZone(container, z.dir, z.label);
+  } catch {
+    container.innerHTML = '<em style="font-size:.75rem;color:#e03131;">Failed to load.</em>';
+  }
+}
+
+// ── Custom zone ───────────────────────────────────────────────────────────────
+function addCustomZone() {
+  const input = document.getElementById('new-zone-name');
+  const name  = input.value.trim();
+  if (!name) return;
+  const sep = PHOTOS_ROOT.includes('\\') ? '\\' : '/';
+  const dir = PHOTOS_ROOT + sep + name;
+  addDestZone(document.getElementById('event-zones'), dir, '📁 ' + name);
+  input.value = '';
+}
+
+// ── Zone DOM helper ───────────────────────────────────────────────────────────
+function addDestZone(container, dir, label) {
+  const zone = document.createElement('div');
+  zone.className     = 'dest-zone';
+  zone.dataset.destDir = dir;
+  zone.innerHTML = `
+    <div class="dest-zone-header">
+      <span title="${escHtml(dir)}">${escHtml(label)}</span>
+      <span class="dest-count">0</span>
+    </div>
+    <div class="zone-thumbs"></div>`;
+  zone.addEventListener('dragover',  e  => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', ()  => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop',      e  => { e.preventDefault(); zone.classList.remove('drag-over'); handleDrop(zone, e); });
+  container.appendChild(zone);
+}
+
+// ── Drag & drop ───────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.file-card').forEach(card => {
+    // ── Click → select ────────────────────────────────────────────────────────
+    card.addEventListener('click', e => {
+      if (e.shiftKey && _lastClickedSrc) {
+        rangeSelectTo(card);
+      } else if (e.ctrlKey || e.metaKey) {
+        toggleSelect(card);
+      } else {
+        selectOnly(card);
+      }
+    });
+
+    // ── Double-click → lightbox ────────────────────────────────────────────────
+    card.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      openLightbox(card);
+    });
+
+    // ── Drag start ────────────────────────────────────────────────────────────
+    card.addEventListener('dragstart', e => {
+      // If dragging an unselected card, clear selection and treat it as a single drag
+      if (!selected.has(card.dataset.src)) {
+        clearSelection();
+        selected.add(card.dataset.src);
+        card.classList.add('selected');
+        _lastClickedSrc = card.dataset.src;
+      }
+      _dragSrcs = [...selected];
+      _dragSrcs.forEach(s => cardBySrc(s)?.classList.add('dragging'));
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', _dragSrcs[0]);
+    });
+
+    card.addEventListener('dragend', () => {
+      _dragSrcs.forEach(s => cardBySrc(s)?.classList.remove('dragging'));
+      _dragSrcs = [];
+    });
+  });
+  buildQuarterlyZones();
+  loadEventZones();
+  updateCounts();
+});
+
+function handleDrop(zone, e) {
+  const srcs = _dragSrcs.length ? _dragSrcs : [e.dataTransfer.getData('text/plain')];
+  if (!srcs.length || !srcs[0]) return;
+  const destDir   = zone.dataset.destDir;
+  const destLabel = zone.querySelector('.dest-zone-header span').textContent;
+
+  const prevDirsToRefresh = new Set();
+
+  for (const srcPath of srcs) {
+    // Remove from previous zone if re-assigning
+    const prev = assignments.get(srcPath);
+    if (prev) {
+      document.querySelector(`.dest-zone[data-dest-dir="${CSS.escape(prev.destDir)}"] .zone-thumbs`)
+        ?.querySelector(`[data-src="${CSS.escape(srcPath)}"]`)?.remove();
+      prevDirsToRefresh.add(prev.destDir);
+    }
+
+    assignments.set(srcPath, { destDir, destLabel });
+
+    // Update card badge + add zone thumbnail
+    const card = cardBySrc(srcPath);
+    if (card) {
+      card.classList.add('assigned');
+      card.querySelector('.dest-badge').textContent = destLabel;
+      const img = card.querySelector('img');
+      if (img && img.src) {
+        const t       = document.createElement('img');
+        t.className   = 'zone-thumb';
+        t.src         = img.src;
+        t.dataset.src = srcPath;
+        t.title       = card.querySelector('.card-name')?.textContent || srcPath;
+        t.onclick     = () => unassign(card);
+        zone.querySelector('.zone-thumbs').appendChild(t);
+      }
+    }
+  }
+
+  prevDirsToRefresh.forEach(d => refreshZoneCount(d));
+  refreshZoneCount(destDir);
+  updateCounts();
+}
+
+function unassign(card) {
+  const srcPath = card.dataset.src;
+  const prev    = assignments.get(srcPath);
+  if (prev) {
+    document.querySelector(`.dest-zone[data-dest-dir="${CSS.escape(prev.destDir)}"] .zone-thumbs`)
+      ?.querySelector(`[data-src="${CSS.escape(srcPath)}"]`)?.remove();
+    refreshZoneCount(prev.destDir);
+  }
+  assignments.delete(srcPath);
+  card.classList.remove('assigned');
+  selected.delete(srcPath);
+  card.classList.remove('selected');
+  card.querySelector('.dest-badge').textContent = '';
+  updateCounts();
+}
+
+function refreshZoneCount(destDir) {
+  const zone = document.querySelector(`.dest-zone[data-dest-dir="${CSS.escape(destDir)}"]`);
+  if (zone) zone.querySelector('.dest-count').textContent =
+    zone.querySelectorAll('.zone-thumb').length;
+}
+
+function updateCounts() {
+  const total    = document.querySelectorAll('.file-card').length;
+  const assigned = assignments.size;
+  document.getElementById('unassigned-count').textContent = `${total - assigned} unassigned`;
+  document.getElementById('assigned-count'  ).textContent = `${assigned} assigned`;
+}
+
+// ── Submit ────────────────────────────────────────────────────────────────────
+async function submitForm(mode) {
+  if (!assignments.size) { alert('Drag files onto destinations first.'); return; }
+  const list     = [...assignments.entries()].map(([src_path, {destDir}]) => ({ src_path, dest_dir: destDir }));
+  const endpoint = mode === 'dry-run' ? '/api/move/dry-run' : '/api/move/execute';
+  const area     = document.getElementById('result-area');
+  area.innerHTML = '<div class="alert alert-info"><span class="spinner"></span> Processing…</div>';
+  const resp = await fetch(endpoint, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ assignments: list }),
+  });
+  const data = await resp.json();
+  if (mode === 'dry-run') renderDryRunResult(data, list);
+  else window.location.href = '/log';
+}
+
+function renderDryRunResult(data, list) {
+  const area = document.getElementById('result-area');
+  const s    = data.summary;
+  let html = `<div class="card">
+    <h2>Dry-run Preview</h2>
+    <div style="display:flex;gap:.8rem;margin-bottom:1rem;flex-wrap:wrap;">
+      <span class="badge badge-move">Move: ${s.move||0}</span>
+      <span class="badge badge-rename">Rename: ${s.rename||0}</span>
+      <span class="badge badge-skip">Skip (dup): ${s.skip_duplicate||0}</span>
+      <span class="badge badge-error">Error: ${s.error||0}</span>
+    </div>
+    <table><thead><tr>
+      <th>File</th><th>Action</th><th>Destination</th><th>Note</th>
+    </tr></thead><tbody>`;
+  for (const f of data.files) {
+    const cls = {move:'badge-move',rename:'badge-rename',skip_duplicate:'badge-skip'}[f.action] || 'badge-error';
+    html += `<tr>
+      <td>${escHtml(f.original_filename)}</td>
+      <td><span class="badge ${cls}">${escHtml(f.action)}</span></td>
+      <td style="font-size:.78rem;word-break:break-all;">${escHtml(f.final_dest)}</td>
+      <td style="font-size:.78rem;">${escHtml(f.conflict_note||'')}</td>
+    </tr>`;
+  }
+  html += `</tbody></table>
+    <div style="display:flex;gap:.8rem;margin-top:1rem;">
+      <button class="btn btn-success"
+        onclick="confirmExecute(${JSON.stringify(JSON.stringify(list)).replace(/</g,'\\u003c')})">
+        ✔ Confirm &amp; Move
+      </button>
+      <button class="btn btn-secondary"
+        onclick="document.getElementById('result-area').innerHTML=''">
+        ← Back
+      </button>
+    </div></div>`;
+  area.innerHTML = html;
+  area.scrollIntoView({ behavior: 'smooth' });
+}
+
+async function confirmExecute(listJson) {
+  await fetch('/api/move/execute', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ assignments: JSON.parse(listJson) }),
+  });
+  window.location.href = '/log';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+{% endblock %}

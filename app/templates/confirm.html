@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Confirm – Photo Backup Organizer{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>Dry-run Preview</h2>
+  <p style="font-size:.9rem;color:#495057;margin-bottom:1rem;">
+    Review the planned changes below. No files have been moved yet.
+    Press <strong>Confirm &amp; Move</strong> to proceed.
+  </p>
+
+  {% if files %}
+  {# Summary badges #}
+  {% set ns = namespace(move=0, rename=0, skip=0, error=0) %}
+  {% for f in files %}
+    {% if f.action == 'move'           %}{% set ns.move   = ns.move   + 1 %}{% endif %}
+    {% if f.action == 'rename'         %}{% set ns.rename = ns.rename + 1 %}{% endif %}
+    {% if f.action == 'skip_duplicate' %}{% set ns.skip   = ns.skip   + 1 %}{% endif %}
+    {% if f.action == 'error'          %}{% set ns.error  = ns.error  + 1 %}{% endif %}
+  {% endfor %}
+
+  <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:1rem;">
+    <span class="badge badge-move">Move: {{ ns.move }}</span>
+    <span class="badge badge-rename">Rename: {{ ns.rename }}</span>
+    <span class="badge badge-skip">Skip (duplicate): {{ ns.skip }}</span>
+    <span class="badge badge-error">Error: {{ ns.error }}</span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Original filename</th>
+        <th>Action</th>
+        <th>Final destination</th>
+        <th>Note</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for f in files %}
+      <tr>
+        <td>{{ f.original_filename }}</td>
+        <td>
+          {% if f.action == 'move' %}
+            <span class="badge badge-move">move</span>
+          {% elif f.action == 'rename' %}
+            <span class="badge badge-rename">rename → {{ f.final_filename }}</span>
+          {% elif f.action == 'skip_duplicate' %}
+            <span class="badge badge-skip">skip (duplicate)</span>
+          {% else %}
+            <span class="badge badge-error">error</span>
+          {% endif %}
+        </td>
+        <td style="font-size:.8rem;word-break:break-all;">{{ f.final_dest }}</td>
+        <td style="font-size:.8rem;">{{ f.conflict_note or f.error_message or '' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <div style="display:flex;gap:1rem;margin-top:1.2rem;">
+    <form method="post" action="/api/move/execute" id="execute-form">
+      {# assignments are embedded as a hidden JSON field and submitted via JS #}
+      <input type="hidden" name="assignments_json" id="assignments_json" value="{{ assignments_json | default('[]') }}" />
+      <button type="button" class="btn btn-success" onclick="doExecute()">✔ Confirm &amp; Move</button>
+    </form>
+    <a href="/review" class="btn btn-secondary">← Back to Review</a>
+  </div>
+
+  {% else %}
+    <div class="alert alert-warn">No dry-run data available. Go back to <a href="/review">Review</a> and press <em>Preview changes</em>.</div>
+  {% endif %}
+</div>
+
+<script>
+async function doExecute() {
+  const raw = document.getElementById('assignments_json').value;
+  let assignments;
+  try { assignments = JSON.parse(raw); } catch(e) { alert('Invalid assignment data.'); return; }
+
+  const resp = await fetch('/api/move/execute', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assignments })
+  });
+  window.location.href = '/log';
+}
+</script>
+{% endblock %}
