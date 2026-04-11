@@ -26,8 +26,9 @@ async def index(request: Request) -> HTMLResponse:
     """Landing page – scan trigger and status."""
     progress = get_scan_progress()
     return templates.TemplateResponse(
+        request,
         "index.html",
-        {"request": request, "progress": progress.to_dict()},
+        {"progress": progress.to_dict()},
     )
 
 
@@ -64,9 +65,9 @@ async def review(request: Request) -> HTMLResponse:
 
     cfg = get_config()
     return templates.TemplateResponse(
+        request,
         "review.html",
         {
-            "request": request,
             "devices": devices,
             "scan_json": json.dumps(devices),
             "photos_root": str(cfg.library.photos_root),
@@ -98,10 +99,10 @@ async def serve_media(src: str) -> FileResponse:
 @router.get("/confirm", response_class=HTMLResponse)
 async def confirm(request: Request) -> HTMLResponse:
     """Dry-run preview confirmation page."""
-    return templates.TemplateResponse("confirm.html", {"request": request, "files": []})
+    return templates.TemplateResponse(request, "confirm.html", {"files": []})
 
 
 @router.get("/log", response_class=HTMLResponse)
 async def log_view(request: Request) -> HTMLResponse:
     """Batch result and audit log viewer."""
-    return templates.TemplateResponse("log.html", {"request": request, "entries": [], "summary": {}})
+    return templates.TemplateResponse(request, "log.html", {"entries": [], "summary": {}})
