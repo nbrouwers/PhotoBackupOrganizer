@@ -11,7 +11,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libjpeg-dev \
     libpng-dev \
     libwebp-dev \
-    libheif-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a venv and install Python deps into it
@@ -34,7 +33,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libjpeg62-turbo \
     libpng16-16 \
     libwebp7 \
-    libheif1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the venv from the builder

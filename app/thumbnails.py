@@ -1,11 +1,10 @@
 """Thumbnail and video poster-frame generation (FR-19, NFR-04).
 
-Photos: resized via Pillow to a square JPEG (max thumb_size × thumb_size).
-Videos: a single frame extracted at the 1-second mark by ``ffmpeg``.
-
-Generated files are stored in ``<cache_path>/thumbs/`` and their paths are
-cached in the SQLite ``thumbnails`` table so they are not regenerated on
-every scan.
+All thumbnails are generated via ffmpeg, which handles every format we may
+encounter: JPEG, PNG, WebP, HEIC/HEIF, DNG/RAW, MP4, MOV, MKV, etc.
+Generated files are stored in ``<cache_path>/thumbs/`` (JPEG) and their
+paths are cached in the SQLite ``thumbnails`` table so they are not
+regenerated on every request.
 """
 
 from __future__ import annotations
@@ -15,14 +14,6 @@ import hashlib
 import logging
 from pathlib import Path
 from typing import Optional
-
-from PIL import Image
-
-try:
-    from pillow_heif import register_heif_opener
-    register_heif_opener()
-except Exception:  # ImportError if not installed; OSError/RuntimeError if libheif missing
-    pass
 
 from app.config import get_config
 from app.database import get_cached_thumbnail, set_cached_thumbnail
@@ -48,22 +39,12 @@ def _thumb_filename(source_path: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _generate_photo_thumb_sync(source_path: Path, dest_path: Path, size: int) -> None:
-    """Blocking Pillow operation – run in a thread pool executor."""
-    with Image.open(source_path) as img:
-        img = img.convert("RGB")  # Handle HEIC/PNG with alpha
-        img.thumbnail((size, size), Image.LANCZOS)
-        img.save(dest_path, "JPEG", quality=75, optimize=True)
-
-
 async def generate_photo_thumbnail(source_path: str) -> Optional[str]:
     """Return the path to the thumbnail JPEG for *source_path*.
 
-    Strategy:
-    1. Return from DB cache if available.
-    2. Generate via Pillow (fast, handles JPEG/PNG/WebP/HEIC with pillow-heif).
-    3. Fall back to ffmpeg if Pillow cannot open the file (e.g. DNG/RAW,
-       unusual HEIC variants, corrupted EXIF, etc.).
+    Uses ffmpeg to extract and scale the first frame, which handles every
+    image format in the configured extension list (JPEG, PNG, WebP, HEIC,
+    DNG/RAW, etc.) without any additional Python dependencies.
     """
     cached = await get_cached_thumbnail(source_path)
     if cached and Path(cached).exists():
@@ -73,27 +54,6 @@ async def generate_photo_thumbnail(source_path: str) -> Optional[str]:
     dest_path = _thumb_dir() / _thumb_filename(source_path)
     size = cfg.cache.thumb_size
 
-    # ── Primary: Pillow ────────────────────────────────────────────────────
-    try:
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None,
-            _generate_photo_thumb_sync,
-            Path(source_path),
-            dest_path,
-            size,
-        )
-        if dest_path.exists() and dest_path.stat().st_size > 0:
-            await set_cached_thumbnail(source_path, str(dest_path))
-            return str(dest_path)
-    except Exception as exc:
-        logger.info(
-            "Pillow thumbnail failed for %s: %s — trying ffmpeg fallback",
-            source_path, exc,
-        )
-
-    # ── Fallback: ffmpeg ───────────────────────────────────────────────────
-    # Handles formats Pillow can't: DNG/RAW, some HEIC variants, etc.
     try:
         proc = await asyncio.create_subprocess_exec(
             "ffmpeg", "-y",
@@ -105,14 +65,13 @@ async def generate_photo_thumbnail(source_path: str) -> Optional[str]:
             stderr=asyncio.subprocess.DEVNULL,
         )
         await asyncio.wait_for(proc.wait(), timeout=30)
+
         if dest_path.exists() and dest_path.stat().st_size > 0:
             await set_cached_thumbnail(source_path, str(dest_path))
             return str(dest_path)
+
     except Exception as exc:
-        logger.warning(
-            "ffmpeg thumbnail fallback also failed for %s: %s",
-            source_path, exc,
-        )
+        logger.warning("Photo thumbnail generation failed for %s: %s", source_path, exc)
 
     return None
 
