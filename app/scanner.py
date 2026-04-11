@@ -128,12 +128,24 @@ def _collect_candidates(
 ) -> list[Path]:
     """Return media files under *device_path* (recursive, sorted).
 
+    Synology NAS creates ``@eaDir`` directories alongside every folder it
+    manages.  These contain internal thumbnail / metadata files (e.g.
+    ``SYNOPHOTO:0_THUMB.jpg``) that look like ordinary JPEG files.  They are
+    excluded here so that Synology-generated artefacts never appear in the
+    review UI.
+
     When *date_from* or *date_to* are given, files whose modification date
     falls outside the range are excluded (fast mtime pre-filter).
     """
     cfg = get_config()
     results = []
     for p in device_path.rglob("*"):
+        # Skip Synology internal directories and their contents
+        if "@eaDir" in p.parts:
+            continue
+        # Skip Synology thumbnail / metadata files by name prefix
+        if p.name.startswith("SYNOPHOTO"):
+            continue
         if not (p.is_file() and p.suffix.lower() in cfg.all_extensions):
             continue
         if date_from is not None or date_to is not None:
