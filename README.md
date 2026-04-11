@@ -6,14 +6,46 @@ A Python web application that runs in a Docker container on a Synology NAS. It s
 
 ## Table of Contents
 
-1. [How it works](#how-it-works)
-2. [Project structure](#project-structure)
-3. [Development setup](#development-setup)
-4. [Running tests](#running-tests)
-5. [Building &amp; publishing the Docker image (GitHub Actions CI/CD)](#building-the-docker-image)
-6. [Deploying to a Synology NAS](#deploying-to-a-synology-nas)
-7. [Configuration reference](#configuration-reference)
-8. [Using the application](#using-the-application)
+1. [Features](#features)
+2. [How it works](#how-it-works)
+3. [Project structure](#project-structure)
+4. [Development setup](#development-setup)
+5. [Running tests](#running-tests)
+6. [Building &amp; publishing the Docker image (GitHub Actions CI/CD)](#building-the-docker-image)
+7. [Deploying to a Synology NAS](#deploying-to-a-synology-nas)
+8. [Configuration reference](#configuration-reference)
+9. [Using the application](#using-the-application)
+
+---
+
+## Features
+
+### Scan
+- **Selective folder scanning** — expand "Choose folders to scan" to cherry-pick individual sub-folders per device. Uncheck any you want to skip; the rest are scanned normally.
+- **Quarter & date presets** — one-click quarter buttons (current quarter plus the last four) narrow the scan to files modified in that period, drastically reducing scan time on large backup folders. Free-form From/To date fields are also available.
+- **Two-phase progress bar** — the scanner first counts all candidate files, then processes them one by one. A live progress bar (percentage, current filename, found count) updates every 2 seconds via HTMX polling — no full-page refresh.
+- **Detailed logging** — every file examined is logged at DEBUG level; per-device summaries at INFO level.
+- **Automatic skip of processed files** — an SQLite database records every moved file so it is never re-presented on a subsequent scan.
+
+### Review
+- **Drag-and-drop assignment** — drag one or more file cards onto a destination zone. Multi-select with Shift+Click or Ctrl+Click before dragging.
+- **Quarterly auto-assignment** — when the review page loads, every file is automatically pre-assigned to its quarterly destination (`<year>/Q<quarter>`). Re-drag to an event folder to override.
+- **Video play icon** — video thumbnails are decorated with a `▶` overlay badge so they are instantly distinguishable from photos.
+- **GPS location labels** — if a photo's EXIF data contains GPS coordinates, the card shows a `⊙ City, Country` label (e.g. `⊙ Amsterdam, Netherlands`). Locations are reverse-geocoded via OpenStreetMap Nominatim, cached permanently in SQLite, and appear in the full-screen lightbox caption.
+- **Full-screen lightbox** — double-click any card to preview the full-resolution photo or play the video inline.
+- **Custom event destinations** — type a folder name and click "+ Add" to create a new destination zone on the fly.
+- **Tile-size slider** — resize the grid from 2 to 10 columns.
+
+### Move
+- **Dry-run preview** — see exactly what will happen (move / rename / skip duplicate / error) before any file is touched.
+- **Duplicate detection** — identical files (same size + SHA-256 hash) at the destination are skipped automatically.
+- **Conflict-free renaming** — non-duplicate filename collisions get a numeric suffix (`_1`, `_2`, …).
+- **Safe copy-then-delete** — files are written to the destination first; the source is deleted only after a successful write.
+
+### Infrastructure
+- **No Docker required on your desktop** — the GitHub Actions CI/CD pipeline builds and publishes the `linux/amd64` image on every push to `main`.
+- **Optional HTTP Basic Auth** — protect the web UI with a username and password in `config.yaml`.
+- **Persistent cache** — thumbnails and GPS lookups survive container restarts via the `/cache` bind-mount volume.
 
 ---
 
@@ -44,17 +76,18 @@ photo-backup-organizer/
 │   ├── main.py            # FastAPI application factory and entry point
 │   ├── config.py          # YAML config loader + Pydantic validation
 │   ├── database.py        # Async SQLite persistence (aiosqlite)
-│   ├── scanner.py         # Backup folder scanner
-│   ├── metadata.py        # EXIF / ffprobe capture-date extraction
+│   ├── scanner.py         # Backup folder scanner with two-phase progress
+│   ├── metadata.py        # EXIF / ffprobe capture-date and GPS extraction
+│   ├── geocoder.py        # Reverse geocoding via Nominatim (OpenStreetMap)
 │   ├── thumbnails.py      # Pillow photo thumbnails + ffmpeg video posters
 │   ├── destinations.py    # Library path resolution (quarterly / event)
 │   ├── duplicates.py      # SHA-256-based duplicate detection
 │   ├── mover.py           # Dry-run and execute batch move logic
 │   ├── routers/
-│   │   ├── scan.py        # GET/POST /api/scan
+│   │   ├── scan.py        # GET/POST /api/scan  GET /api/scan/folders
 │   │   ├── destinations.py# /api/destinations
 │   │   ├── move.py        # POST /api/move/dry-run  POST /api/move/execute
-│   │   └── ui.py          # HTML page routes (Jinja2)
+│   │   └── ui.py          # HTML page routes (Jinja2) + /api/geocode
 │   └── templates/         # HTMX + Jinja2 HTML templates
 ├── tests/                 # pytest test suite
 ├── config/
@@ -396,20 +429,22 @@ Open `http://<NAS_IP>:9121` in a browser on your local network.
 
 #### Step 1 – Scan
 
-Press **Scan now**. The application scans all configured backup folders in the background. Progress is updated live. Files already moved in a previous session are automatically skipped.
+1. Optionally expand **Choose folders to scan** and uncheck sub-folders you want to skip.
+2. Optionally click a **quarter preset** (e.g. `Q1 2026`) or fill in the From/To date fields to limit the scan to a specific period. Scanning one quarter instead of all years takes a fraction of the time.
+3. Press **Scan now**. The scanner runs in the background and updates the progress bar every 2 seconds.
+4. When the scan completes, click **Go to Review**.
 
 #### Step 2 – Review
 
-The **Review** page shows all unprocessed files grouped by device and capture date.
+The **Review** page shows all unprocessed files as a draggable tile grid.
 
-For each group, choose a destination from the **Destination for this group** dropdown:
-
-| Option | Result |
-|---|---|
-| **Quarterly folder (auto)** | Files go to `<library_root>/<year>/Q<quarter>/` based on their capture date |
-| **Event folder** | Pick an existing category + event, or type a new event name to create it on the spot |
-
-You can also expand individual file rows and set a per-file destination override.
+- Files are **automatically pre-assigned** to their quarterly destination (`<year>/Q<quarter>`) on load.
+- **Video cards** show a `▶` play-icon overlay.
+- **Photo cards with GPS data** show a `⊙ City, Country` label (loaded in the background).
+- Drag cards onto a destination zone to assign them. Shift+Click or Ctrl+Click for multi-select.
+- To override the quarterly assignment, drag onto an event-folder zone instead.
+- Double-click any card to open a full-screen lightbox (photo or video).
+- Use the grid-size slider to adjust the number of columns (2–10).
 
 #### Step 3 – Preview changes (dry-run)
 
@@ -445,9 +480,11 @@ The application also exposes a JSON API (documented at `http://<NAS_IP>:9121/doc
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/scan` | Trigger a background scan |
+| `POST` | `/api/scan` | Trigger a scan (optional body: `include_paths`, `date_from`, `date_to`) |
 | `GET` | `/api/scan/status` | Poll scan progress |
 | `GET` | `/api/scan/result` | Retrieve last scan result |
+| `GET` | `/api/scan/folders` | List scannable sub-folders per device |
+| `GET` | `/api/geocode` | Reverse-geocode GPS coords (`?lat=&lon=`) |
 | `GET` | `/api/destinations/categories` | List event categories |
 | `GET` | `/api/destinations/events` | List event folders in a category |
 | `POST` | `/api/destinations/events` | Create a new event folder |
