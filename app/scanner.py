@@ -19,7 +19,7 @@ from typing import Optional
 
 from app.config import get_config
 from app.database import is_processed
-from app.metadata import MediaType, get_capture_date, get_media_type
+from app.metadata import MediaType, get_capture_date, get_gps_coords, get_media_type
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,7 @@ class MediaFile:
     capture_datetime: datetime
     size_bytes: int
     device_label: str
+    gps: Optional[tuple[float, float]] = None  # (lat, lon) in decimal degrees
 
 
 @dataclass
@@ -120,13 +121,29 @@ def get_last_scan_result() -> Optional[ScanResult]:
 # ---------------------------------------------------------------------------
 
 
-def _collect_candidates(device_path: Path) -> list[Path]:
-    """Return all media files under *device_path* (recursive, sorted)."""
+def _collect_candidates(
+    device_path: Path,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+) -> list[Path]:
+    """Return media files under *device_path* (recursive, sorted).
+
+    When *date_from* or *date_to* are given, files whose modification date
+    falls outside the range are excluded (fast mtime pre-filter).
+    """
     cfg = get_config()
-    return sorted(
-        p for p in device_path.rglob("*")
-        if p.is_file() and p.suffix.lower() in cfg.all_extensions
-    )
+    results = []
+    for p in device_path.rglob("*"):
+        if not (p.is_file() and p.suffix.lower() in cfg.all_extensions):
+            continue
+        if date_from is not None or date_to is not None:
+            mtime = date.fromtimestamp(p.stat().st_mtime)
+            if date_from is not None and mtime < date_from:
+                continue
+            if date_to is not None and mtime > date_to:
+                continue
+        results.append(p)
+    return sorted(results)
 
 
 async def _scan_device(
@@ -170,11 +187,13 @@ async def _scan_device(
 
             capture_dt = await get_capture_date(file_path)
             size = file_path.stat().st_size
+            gps = get_gps_coords(file_path) if media_type == "photo" else None
 
             logger.debug(
-                "[%s] Found %s: %s  capture=%s  size=%d bytes",
+                "[%s] Found %s: %s  capture=%s  size=%d bytes%s",
                 device_label, media_type, file_path.name,
                 capture_dt.date().isoformat(), size,
+                f"  gps={gps}" if gps else "",
             )
 
             files.append(
@@ -186,6 +205,7 @@ async def _scan_device(
                     capture_datetime=capture_dt,
                     size_bytes=size,
                     device_label=device_label,
+                    gps=gps,
                 )
             )
             _progress.found += 1
@@ -216,18 +236,24 @@ def _group_by_date(files: list[MediaFile]) -> list[DateGroup]:
     return list(groups.values())
 
 
-async def scan_all_devices() -> ScanResult:
-    """Scan all configured devices and return a structured :class:`ScanResult`.
+async def scan_all_devices(
+    include_paths: Optional[list[str]] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+) -> ScanResult:
+    """Scan configured devices and return a structured :class:`ScanResult`.
 
-    Phase 1 – pre-count: quickly walks every device folder to build the full
-    candidate list so the progress bar has an accurate total before any
-    metadata is extracted.
+    Parameters
+    ----------
+    include_paths:
+        When provided, only the listed sub-folders (absolute paths that fall
+        inside a configured device root) are walked.  ``None`` scans all.
+    date_from / date_to:
+        Optional mtime-based pre-filter; files outside the window are skipped
+        before any metadata is read (fast quarter-based scope reduction).
 
-    Phase 2 – process: extracts capture dates, checks the processed-files DB,
-    and builds the result grouped by device and date.
-
-    Updates the module-level :class:`ScanProgress` throughout so callers can
-    poll ``/api/scan/status`` for live progress.
+    Updates the module-level :class:`ScanProgress` so callers can poll
+    ``/api/scan/status`` for live progress.
     """
     global _progress
     _progress = ScanProgress()
@@ -237,13 +263,28 @@ async def scan_all_devices() -> ScanResult:
 
     try:
         # ── Phase 1: pre-count all candidate files ────────────────────────
-        logger.info("Scan started — pre-counting media files in %d device(s)", len(cfg.devices))
+        logger.info(
+            "Scan started — %d device(s), include_paths=%s, date_from=%s, date_to=%s",
+            len(cfg.devices), include_paths, date_from, date_to,
+        )
         device_candidates: list[tuple[str, Path, list[Path]]] = []
 
         for device_cfg in cfg.devices:
             device_path = Path(device_cfg.path)
             _progress.current_device = device_cfg.label
             _progress.current_file = None
+
+            # Determine which sub-roots to walk for this device
+            if include_paths is not None:
+                scan_roots = [
+                    Path(p) for p in include_paths
+                    if Path(p).is_relative_to(device_path)
+                ]
+                if not scan_roots:
+                    device_candidates.append((device_cfg.label, device_path, []))
+                    continue
+            else:
+                scan_roots = None
 
             if not device_path.exists():
                 logger.warning("[%s] Device path does not exist: %s", device_cfg.label, device_path)
@@ -252,7 +293,13 @@ async def scan_all_devices() -> ScanResult:
                 continue
 
             logger.info("[%s] Pre-counting files in %s …", device_cfg.label, device_path)
-            candidates = _collect_candidates(device_path)
+            roots = scan_roots if scan_roots else [device_path]
+            candidates: list[Path] = []
+            for root in roots:
+                if root.exists():
+                    candidates.extend(_collect_candidates(root, date_from, date_to))
+            candidates = sorted(set(candidates))
+
             device_candidates.append((device_cfg.label, device_path, candidates))
             _progress.total += len(candidates)
             logger.info("[%s] Found %d media file(s) to examine", device_cfg.label, len(candidates))

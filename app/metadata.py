@@ -123,3 +123,50 @@ async def get_capture_date(path: str | Path) -> datetime:
 
     # Fallback for any media type
     return _mtime_date(p)
+
+
+# ---------------------------------------------------------------------------
+# GPS extraction
+# ---------------------------------------------------------------------------
+
+
+def _ratio_to_float(r) -> float:
+    """Convert an exifread Ratio (or plain number) to a Python float."""
+    try:
+        return float(r.num) / float(r.den) if r.den else 0.0
+    except AttributeError:
+        return float(r)
+
+
+def _dms_to_decimal(values: list, ref: str) -> float:
+    """Convert a list of three DMS Ratio values + reference to decimal degrees."""
+    d = _ratio_to_float(values[0])
+    m = _ratio_to_float(values[1])
+    s = _ratio_to_float(values[2])
+    decimal = d + m / 60.0 + s / 3600.0
+    return -decimal if ref in ("S", "W") else decimal
+
+
+def get_gps_coords(path: str | Path) -> Optional[tuple[float, float]]:
+    """Return *(lat, lon)* in decimal degrees if GPS EXIF is present, else ``None``.
+
+    Only valid for photo files; videos are not supported.
+    """
+    p = Path(path)
+    if get_media_type(p) != "photo":
+        return None
+    try:
+        with p.open("rb") as fh:
+            tags = exifread.process_file(fh, details=False)
+        lat_tag = tags.get("GPS GPSLatitude")
+        lat_ref = tags.get("GPS GPSLatitudeRef")
+        lon_tag = tags.get("GPS GPSLongitude")
+        lon_ref = tags.get("GPS GPSLongitudeRef")
+        if not (lat_tag and lat_ref and lon_tag and lon_ref):
+            return None
+        lat = _dms_to_decimal(lat_tag.values, str(lat_ref))
+        lon = _dms_to_decimal(lon_tag.values, str(lon_ref))
+        return (round(lat, 6), round(lon, 6))
+    except Exception as exc:
+        logger.debug("GPS extraction failed for %s: %s", path, exc)
+        return None

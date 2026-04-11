@@ -57,6 +57,29 @@
     color: var(--clr-text-3);
     margin-top: .05rem;
   }
+  .card-location {
+    font-size: .72rem;
+    color: var(--clr-text-3);
+    margin-top: .05rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* ── Video play icon overlay ── */
+  .thumb-wrap { position: relative; }
+  .file-card[data-media="video"] .thumb-wrap::after {
+    content: "\25B6";
+    position: absolute;
+    top: .4rem; left: .4rem;
+    background: rgba(0,0,0,.55);
+    color: #fff;
+    border-radius: 50%;
+    width: 26px; height: 26px;
+    font-size: .85rem;
+    line-height: 26px;
+    text-align: center;
+    pointer-events: none;
+  }
   .dest-badge {
     font-size: .7rem;
     background: var(--clr-success-lt);
@@ -228,13 +251,17 @@ const VIDEOS_ROOT = {{ videos_root | tojson }};
                  data-media="{{ f.media_type }}"
                  data-date="{{ f.capture_date }}"
                  data-quarterly="{{ f.quarterly_dest }}"
-                 data-device="{{ device.label }}">
-              <img src="/thumbnails?src={{ f.path | urlencode(safe='') }}"
-                   alt="{{ f.filename }}"
-                   loading="lazy"
-                   onerror="this.style.display='none'" />
+                 data-device="{{ device.label }}"
+                 {% if f.gps %}data-gps="{{ f.gps[0] }},{{ f.gps[1] }}"{% endif %}>
+              <div class="thumb-wrap">
+                <img src="/thumbnails?src={{ f.path | urlencode(safe='') }}"
+                     alt="{{ f.filename }}"
+                     loading="lazy"
+                     onerror="this.style.display='none'" />
+              </div>
               <div class="card-name" title="{{ f.filename }}">{{ f.filename }}</div>
               <div class="card-meta">{{ f.capture_date }} · {{ device.label }}</div>
+              {% if f.gps %}<div class="card-location"><span class="location-text">⊚</span></div>{% endif %}
               <div class="dest-badge" onclick="event.stopPropagation(); unassign(this.closest('.file-card'))">unassign</div>
             </div>
             {% endfor %}
@@ -327,7 +354,9 @@ function openLightbox(card) {
   const media   = card.dataset.media;
   const caption = card.querySelector('.card-name')?.textContent || src;
   const lb      = document.getElementById('lightbox');
-  document.getElementById('lb-caption').textContent = caption;
+  const locEl   = card.querySelector('.location-text');
+  const locText = locEl && locEl.textContent.startsWith('\u229a ') ? locEl.textContent : '';
+  document.getElementById('lb-caption').textContent = caption + (locText ? '  ' + locText : '');
   const body = document.getElementById('lb-body');
   body.innerHTML = '';
   if (media === 'video') {
@@ -426,7 +455,65 @@ function addDestZone(container, dir, label) {
   zone.addEventListener('drop',      e  => { e.preventDefault(); zone.classList.remove('drag-over'); handleDrop(zone, e); });
   container.appendChild(zone);
 }
+// ── Quarterly auto-assignment ─────────────────────────────────────────────────
+// Pre-assigns every card to its quarterly destination when the page loads.
+// Files can still be manually re-assigned or unassigned afterwards.
+function autoAssignQuarterly() {
+  for (const card of allCards()) {
+    const quarterly = card.dataset.quarterly;
+    if (!quarterly || assignments.has(card.dataset.src)) continue;
+    const zone = document.querySelector(`.dest-zone[data-dest-dir="${CSS.escape(quarterly)}"]`);
+    if (!zone) continue;
+    const srcPath   = card.dataset.src;
+    const destLabel = zone.querySelector('.dest-zone-header span').textContent;
+    assignments.set(srcPath, { destDir: quarterly, destLabel });
+    card.classList.add('assigned');
+    card.querySelector('.dest-badge').textContent = destLabel;
+    const img = card.querySelector('img');
+    if (img && img.src && !img.src.endsWith('/thumbnails')) {
+      const t      = document.createElement('img');
+      t.className  = 'zone-thumb';
+      t.src        = img.src;
+      t.dataset.src = srcPath;
+      t.title      = card.querySelector('.card-name')?.textContent || srcPath;
+      t.onclick    = () => unassign(card);
+      zone.querySelector('.zone-thumbs').appendChild(t);
+    }
+  }
+  document.querySelectorAll('.dest-zone').forEach(z => {
+    z.querySelector('.dest-count').textContent = z.querySelectorAll('.zone-thumb').length;
+  });
+  updateCounts();
+}
 
+// ── GPS lazy location loading ──────────────────────────────────────────────────
+// Fetches reverse-geocoded location for each card that has GPS data.
+// Requests are sent sequentially (one per card's unique coord key) so the
+// server-side 1 req/s Nominatim rate limit is respected.
+async function loadGPSLocations() {
+  const coordMap = new Map(); // "lat,lon" → [card, ...]
+  for (const card of allCards()) {
+    if (!card.dataset.gps) continue;
+    const key = card.dataset.gps;
+    if (!coordMap.has(key)) coordMap.set(key, []);
+    coordMap.get(key).push(card);
+  }
+  for (const [coords, cards] of coordMap) {
+    const [lat, lon] = coords.split(',');
+    try {
+      const { location } = await fetch(`/api/geocode?lat=${lat}&lon=${lon}`).then(r => r.json());
+      for (const card of cards) {
+        const span = card.querySelector('.location-text');
+        if (!span) continue;
+        if (location) {
+          span.textContent = '\u229a ' + location;
+        } else {
+          span.closest('.card-location')?.remove();
+        }
+      }
+    } catch { /* ignore: no network or geocoder unavailable */ }
+  }
+}
 // ── Drag & drop ───────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.file-card').forEach(card => {
@@ -468,7 +555,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   buildQuarterlyZones();
+  autoAssignQuarterly();
   loadEventZones();
+  loadGPSLocations();
   updateCounts();
 });
 

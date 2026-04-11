@@ -3,23 +3,164 @@
 {% block content %}
 <div class="card">
   <h2>Backup Scan</h2>
-  <p style="color:var(--clr-text-2);font-size:var(--font-size-sm);margin-bottom:1rem;">
-    Scans all configured backup folders for new, unprocessed media files.
-    Already-processed files are skipped automatically.
+  <p style="color:var(--clr-text-2);font-size:var(--font-size-sm);margin-bottom:.85rem;">
+    Scans configured backup folders for new, unprocessed media files.
   </p>
-  <button
-      class="btn btn-primary"
-      hx-post="/api/scan"
-      hx-target="#scan-status"
-      hx-swap="innerHTML"
-      hx-indicator="#scan-spinner">
-    <span class="htmx-indicator spinner" id="scan-spinner"></span>
-    Scan now
-  </button>
-  <a href="/review" class="btn btn-secondary" style="margin-left:.5rem;">Go to Review →</a>
+
+  <!-- ── Date / quarter filter ──────────────────────────────────────────── -->
+  <div style="margin-bottom:.9rem;">
+    <div style="font-weight:600;font-size:var(--font-size-sm);color:var(--clr-text-2);margin-bottom:.4rem;">
+      Date filter <span style="font-weight:400;color:var(--clr-text-3);">(by file modification date — optional)</span>
+    </div>
+    <div id="quarter-presets" style="display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:.5rem;"></div>
+    <div style="display:flex;gap:.7rem;align-items:center;flex-wrap:wrap;font-size:var(--font-size-sm);">
+      <label>From <input type="date" id="date-from" style="margin-left:.3rem;" /></label>
+      <label>To&nbsp;&nbsp;<input type="date" id="date-to"   style="margin-left:.3rem;" /></label>
+    </div>
+  </div>
+
+  <!-- ── Folder selection ───────────────────────────────────────────────── -->
+  <details style="margin-bottom:.9rem;">
+    <summary style="font-weight:600;font-size:var(--font-size-sm);color:var(--clr-text-2);cursor:pointer;user-select:none;">
+      Choose folders to scan
+      <span style="font-weight:400;color:var(--clr-text-3);">(default: all)</span>
+    </summary>
+    <div id="folder-list" style="margin-top:.55rem;padding-left:.1rem;">
+      <span style="font-size:var(--font-size-sm);color:var(--clr-text-3);">Loading…</span>
+    </div>
+  </details>
+
+  <!-- ── Actions ────────────────────────────────────────────────────────── -->
+  <div>
+    <button class="btn btn-primary" id="scan-btn" onclick="startScan()">
+      <span id="scan-spinner" class="spinner" style="display:none;margin-right:.35rem;"></span>
+      Scan now
+    </button>
+    <a href="/review" class="btn btn-secondary" style="margin-left:.5rem;">Go to Review →</a>
+  </div>
 </div>
 
 <div id="scan-status">
   {% include "_scan_status.html" %}
 </div>
+
+<script>
+// ── Quarter preset buttons ────────────────────────────────────────────────────
+(function () {
+  const qMonths  = [[1,3],[4,6],[7,9],[10,12]];
+  const container = document.getElementById('quarter-presets');
+  let yr = new Date().getFullYear();
+  let q  = Math.ceil((new Date().getMonth() + 1) / 3);
+
+  const allBtn = document.createElement('button');
+  allBtn.className   = 'btn btn-primary btn-sm';
+  allBtn.textContent = 'All dates';
+  allBtn.onclick     = () => setDateFilter(null, null, allBtn);
+  container.appendChild(allBtn);
+
+  for (let i = 0; i < 5; i++) {
+    const [m1, m2] = qMonths[q - 1];
+    const from = `${yr}-${String(m1).padStart(2,'0')}-01`;
+    const to   = `${yr}-${String(m2).padStart(2,'0')}-${new Date(yr, m2, 0).getDate()}`;
+    const btn  = document.createElement('button');
+    btn.className   = 'btn btn-secondary btn-sm';
+    btn.textContent = `Q${q} ${yr}`;
+    btn.onclick     = () => setDateFilter(from, to, btn);
+    container.appendChild(btn);
+    if (--q === 0) { q = 4; yr--; }
+  }
+})();
+
+function setDateFilter(from, to, btn) {
+  document.getElementById('date-from').value = from || '';
+  document.getElementById('date-to').value   = to   || '';
+  document.querySelectorAll('#quarter-presets .btn').forEach(b => {
+    b.classList.replace('btn-primary', 'btn-secondary');
+  });
+  if (btn) btn.classList.replace('btn-secondary', 'btn-primary');
+}
+
+// ── Folder list ───────────────────────────────────────────────────────────────
+async function loadFolders() {
+  const container = document.getElementById('folder-list');
+  try {
+    const { devices } = await fetch('/api/scan/folders').then(r => r.json());
+    container.innerHTML = '';
+    if (!devices.length) {
+      container.textContent = 'No configured devices found.';
+      return;
+    }
+    for (const dev of devices) {
+      const section = document.createElement('div');
+      section.style.marginBottom = '.5rem';
+      section.dataset.deviceSection = dev.label;
+
+      const devLabel = document.createElement('label');
+      devLabel.style.cssText = 'font-size:var(--font-size-sm);font-weight:600;cursor:pointer;display:block;';
+      devLabel.innerHTML =
+        `<input type="checkbox" class="device-toggle" checked
+                style="margin-right:.35rem;"
+                onchange="toggleDevice(this,'${escH(dev.label)}')">`
+        + escH(dev.label);
+      section.appendChild(devLabel);
+
+      const folderDiv = document.createElement('div');
+      folderDiv.style.paddingLeft = '1.1rem';
+      for (const sf of dev.subfolders) {
+        const lbl = document.createElement('label');
+        lbl.style.cssText = 'display:block;font-size:var(--font-size-sm);cursor:pointer;';
+        lbl.innerHTML =
+          `<input type="checkbox" class="folder-check"
+                  data-path="${escH(sf.path)}" checked
+                  style="margin-right:.35rem;">`
+          + escH(sf.name);
+        folderDiv.appendChild(lbl);
+      }
+      section.appendChild(folderDiv);
+      container.appendChild(section);
+    }
+  } catch {
+    container.innerHTML =
+      '<em style="font-size:var(--font-size-sm);color:var(--clr-danger);">Could not load folder list.</em>';
+  }
+}
+
+function toggleDevice(master, label) {
+  const section = document.querySelector(`[data-device-section="${CSS.escape(label)}"]`);
+  section?.querySelectorAll('.folder-check').forEach(cb => { cb.checked = master.checked; });
+}
+
+// ── Start scan ────────────────────────────────────────────────────────────────
+async function startScan() {
+  const btn = document.getElementById('scan-btn');
+  btn.disabled = true;
+  document.getElementById('scan-spinner').style.display = 'inline-block';
+
+  const allChecks    = [...document.querySelectorAll('.folder-check')];
+  const checkedPaths = allChecks.filter(c => c.checked).map(c => c.dataset.path);
+  // null = scan everything (all checked, or no folder list loaded)
+  const includePaths = (allChecks.length && checkedPaths.length < allChecks.length)
+    ? checkedPaths : null;
+
+  const dateFrom = document.getElementById('date-from').value || null;
+  const dateTo   = document.getElementById('date-to').value   || null;
+
+  await fetch('/api/scan', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ include_paths: includePaths, date_from: dateFrom, date_to: dateTo }),
+  });
+
+  btn.disabled = false;
+  document.getElementById('scan-spinner').style.display = 'none';
+  // Load the live progress partial — its HTMX attrs handle further polling
+  htmx.ajax('GET', '/scan/progress', { target: '#scan-status', swap: 'innerHTML' });
+}
+
+function escH(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+loadFolders();
+</script>
 {% endblock %}

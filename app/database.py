@@ -55,6 +55,11 @@ async def _initialise(db: aiosqlite.Connection) -> None:
             path        TEXT PRIMARY KEY,
             thumb_path  TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS location_cache (
+            lat_lon     TEXT PRIMARY KEY,
+            location    TEXT NOT NULL
+        );
         """
     )
     await db.commit()
@@ -124,6 +129,31 @@ async def set_cached_thumbnail(source_path: str, thumb_path: str) -> None:
     await db.execute(
         "INSERT OR REPLACE INTO thumbnails (path, thumb_path) VALUES (?, ?)",
         (source_path, thumb_path),
+    )
+    await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# location_cache helpers
+# ---------------------------------------------------------------------------
+
+
+async def get_cached_location(lat_key: str) -> Optional[str]:
+    """Return the cached location string for *lat_key*, or ``None`` if absent."""
+    db = await _get_db()
+    async with db.execute(
+        "SELECT location FROM location_cache WHERE lat_lon = ?", (lat_key,)
+    ) as cursor:
+        row = await cursor.fetchone()
+    return row["location"] if row else None
+
+
+async def set_cached_location(lat_key: str, location: str) -> None:
+    """Persist *location* for *lat_key* (empty string means no result)."""
+    db = await _get_db()
+    await db.execute(
+        "INSERT OR REPLACE INTO location_cache (lat_lon, location) VALUES (?, ?)",
+        (lat_key, location),
     )
     await db.commit()
 

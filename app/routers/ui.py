@@ -54,6 +54,7 @@ async def review(request: Request) -> HTMLResponse:
                                 "quarterly_dest": str(
                                     resolve_quarterly_path(f.media_type, f.capture_date)
                                 ),
+                                "gps": list(f.gps) if f.gps else None,
                             }
                             for f in dg.files
                         ],
@@ -105,6 +106,18 @@ async def scan_progress_partial(request: Request) -> HTMLResponse:
         "_scan_status.html",
         {"progress": progress.to_dict()},
     )
+
+
+@router.get("/api/geocode")
+async def geocode_location(lat: float, lon: float) -> dict:
+    """Reverse-geocode *(lat, lon)* to a human-readable location string.
+
+    Results are cached in SQLite; the first lookup for each location calls
+    Nominatim (OpenStreetMap) at most once per second.
+    """
+    from app.geocoder import reverse_geocode
+    location = await reverse_geocode(lat, lon)
+    return {"location": location or ""}
 
 
 @router.get("/confirm", response_class=HTMLResponse)
