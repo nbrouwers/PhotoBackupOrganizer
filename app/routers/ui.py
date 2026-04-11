@@ -87,7 +87,7 @@ async def serve_media(src: str) -> FileResponse:
     allowed_roots = [Path(d.path).resolve() for d in cfg.devices]
     file_path     = Path(src).resolve()
 
-    if not any(str(file_path).startswith(str(root)) for root in allowed_roots):
+    if not any(file_path.is_relative_to(root) for root in allowed_roots):
         raise HTTPException(status_code=403, detail="Access denied: path outside device roots")
 
     if not file_path.exists() or not file_path.is_file():
