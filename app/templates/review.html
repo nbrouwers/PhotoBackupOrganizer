@@ -469,15 +469,18 @@ function quartLabel(p) {
 async function loadEventZones() {
   const container = document.getElementById('event-zones');
   try {
-    const data = await fetch('/api/destinations/all-event-zones').then(r => r.json());
+    const resp = await fetch('/api/destinations/all-event-zones');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
     container.innerHTML = '';
-    if (!data.zones.length) {
+    if (!data.zones || !data.zones.length) {
       container.innerHTML = '<em style="font-size:.75rem;color:#adb5bd;">No event folders found.</em>';
       return;
     }
     for (const z of data.zones) addDestZone(container, z.dir, z.label);
-  } catch {
-    container.innerHTML = '<em style="font-size:.75rem;color:#e03131;">Failed to load.</em>';
+  } catch (err) {
+    console.error('loadEventZones failed:', err);
+    container.innerHTML = '<em style="font-size:.75rem;color:#e03131;">Failed to load event folders.</em>';
   }
 }
 

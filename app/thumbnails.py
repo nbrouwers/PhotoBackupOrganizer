@@ -21,8 +21,8 @@ from PIL import Image
 try:
     from pillow_heif import register_heif_opener
     register_heif_opener()
-except ImportError:
-    pass  # pillow-heif not installed; HEIC/HEIF thumbnails will fail gracefully
+except Exception:  # ImportError if not installed; OSError/RuntimeError if libheif missing
+    pass
 
 from app.config import get_config
 from app.database import get_cached_thumbnail, set_cached_thumbnail
@@ -59,8 +59,11 @@ def _generate_photo_thumb_sync(source_path: Path, dest_path: Path, size: int) ->
 async def generate_photo_thumbnail(source_path: str) -> Optional[str]:
     """Return the path to the thumbnail JPEG for *source_path*.
 
-    Checks the DB cache first; generates and caches if not found.
-    Returns ``None`` on failure.
+    Strategy:
+    1. Return from DB cache if available.
+    2. Generate via Pillow (fast, handles JPEG/PNG/WebP/HEIC with pillow-heif).
+    3. Fall back to ffmpeg if Pillow cannot open the file (e.g. DNG/RAW,
+       unusual HEIC variants, corrupted EXIF, etc.).
     """
     cached = await get_cached_thumbnail(source_path)
     if cached and Path(cached).exists():
@@ -68,7 +71,9 @@ async def generate_photo_thumbnail(source_path: str) -> Optional[str]:
 
     cfg = get_config()
     dest_path = _thumb_dir() / _thumb_filename(source_path)
+    size = cfg.cache.thumb_size
 
+    # ── Primary: Pillow ────────────────────────────────────────────────────
     try:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(
@@ -76,13 +81,40 @@ async def generate_photo_thumbnail(source_path: str) -> Optional[str]:
             _generate_photo_thumb_sync,
             Path(source_path),
             dest_path,
-            cfg.cache.thumb_size,
+            size,
         )
-        await set_cached_thumbnail(source_path, str(dest_path))
-        return str(dest_path)
+        if dest_path.exists() and dest_path.stat().st_size > 0:
+            await set_cached_thumbnail(source_path, str(dest_path))
+            return str(dest_path)
     except Exception as exc:
-        logger.warning("Thumbnail generation failed for %s: %s", source_path, exc)
-        return None
+        logger.info(
+            "Pillow thumbnail failed for %s: %s — trying ffmpeg fallback",
+            source_path, exc,
+        )
+
+    # ── Fallback: ffmpeg ───────────────────────────────────────────────────
+    # Handles formats Pillow can't: DNG/RAW, some HEIC variants, etc.
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y",
+            "-i", source_path,
+            "-vframes", "1",
+            "-vf", f"scale='min({size},iw)':-2",
+            str(dest_path),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(proc.wait(), timeout=30)
+        if dest_path.exists() and dest_path.stat().st_size > 0:
+            await set_cached_thumbnail(source_path, str(dest_path))
+            return str(dest_path)
+    except Exception as exc:
+        logger.warning(
+            "ffmpeg thumbnail fallback also failed for %s: %s",
+            source_path, exc,
+        )
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -109,14 +141,14 @@ async def generate_video_poster(source_path: str) -> Optional[str]:
             "-i", source_path,
             "-vframes", "1",
             "-q:v", "5",             # JPEG quality scale (2=best, 31=worst)
-            "-vf", f"scale='min(300,iw)':-1",
+            "-vf", "scale='min(300,iw)':-2",   # -2 keeps even pixel dimensions
             str(dest_path),
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
         await asyncio.wait_for(proc.wait(), timeout=30)
 
-        if dest_path.exists():
+        if dest_path.exists() and dest_path.stat().st_size > 0:
             await set_cached_thumbnail(source_path, str(dest_path))
             return str(dest_path)
 
