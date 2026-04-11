@@ -29,6 +29,7 @@ on:
     tags:     ["v*"]
   pull_request:
     branches: ["main"]
+  workflow_dispatch:   # allows manual runs from the GitHub Actions tab
 
 # Cancel in-progress runs for the same branch/PR when a new push arrives
 concurrency:
