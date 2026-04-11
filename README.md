@@ -156,15 +156,7 @@ pytest tests/ -v
 
 The repository includes a GitHub Actions CI/CD pipeline (`.github/workflows/docker-publish.yml`) that **automatically builds and publishes the Docker image every time you push to `main`** — no Docker installation required on your own machine.
 
-Synology NAS models use different CPU architectures; the pipeline builds for all of them at once:
-
-| Architecture | Synology models |
-|---|---|
-| `linux/amd64` | Intel/AMD models (DS220+, DS420+, DS720+, DS920+, DS923+, …) |
-| `linux/arm64` | ARM64 models (DS223j, DS423j — Realtek RTD1619B) |
-| `linux/arm/v7` | Older ARMv7 value-line models |
-
-The NAS automatically selects the correct variant when it pulls the image.
+The image targets **`linux/amd64`** — the platform of the Intel Celeron J4025 (and all other Intel/AMD 64-bit Synology NAS models).
 
 ---
 
@@ -180,12 +172,10 @@ push to main
 │  Job 1:     │ ─────────────────► │  Job 2:                  │
 │  test       │                    │  build                   │
 │             │                    │                          │
-│  pytest     │                    │  QEMU + Docker Buildx    │
+│  pytest     │                    │  Docker Buildx           │
 │  (Python    │                    │  → linux/amd64           │
-│   3.12)     │                    │  → linux/arm64           │
-│             │                    │  → linux/arm/v7          │
-└─────────────┘                    │  → push to registry      │
-                                   └──────────────────────────┘
+│   3.12)     │                    │  → push to registry      │
+└─────────────┘                    └──────────────────────────┘
 ```
 
 - **If tests fail**, the build job is cancelled and no image is published.
@@ -214,7 +204,7 @@ The Actions workflow file is already committed and will be picked up immediately
 3. You will see a workflow run called **"CI — Test, Build & Publish"** in progress.
 4. Click it to see the two jobs: **Run tests** and **Build & publish Docker image**.
 
-The first build takes approximately 10–15 minutes (QEMU cross-compilation is slower than native). Subsequent builds take 3–5 minutes thanks to the layer cache.
+The first build takes approximately 3–5 minutes. Subsequent builds are faster thanks to the layer cache.
 
 ---
 
@@ -273,24 +263,17 @@ No changes to the workflow file are needed — the pipeline detects the secrets 
 
 ### Building locally (requires Docker Desktop)
 
-If you later install Docker Desktop on your machine, use the included PowerShell script for local builds:
+If you later install Docker Desktop on your machine, you can build and run the image locally:
 
-```powershell
-# Build and run locally (amd64 only)
-.\build.ps1 -LoadAmd64
+```bash
+# Build the image
+docker build --platform linux/amd64 -t photo-backup-organizer:latest .
 
-# Build all platforms and push to Docker Hub
-.\build.ps1 -Registry your-dockerhub-username -Push
-
-# Export OCI tarballs for offline NAS deployment
-.\build.ps1 -ExportOci
+# Run it locally for testing
+docker run --rm -p 8000:8000 \
+  -v ./config:/config:ro \
+  photo-backup-organizer:latest
 ```
-
----
-
-## Deploying to a Synology NAS
-
-### Prerequisites on the NAS
 
 ---
 
