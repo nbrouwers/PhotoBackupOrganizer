@@ -14,6 +14,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "aiosqlite>=0.20.0",
     "Pillow>=10.3.0",
+    "pillow-heif>=3.5.0",
     "exifread>=3.0.0",
     "PyYAML>=6.0.1",
     "pydantic>=2.7.0",

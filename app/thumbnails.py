@@ -18,6 +18,12 @@ from typing import Optional
 
 from PIL import Image
 
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+except ImportError:
+    pass  # pillow-heif not installed; HEIC/HEIF thumbnails will fail gracefully
+
 from app.config import get_config
 from app.database import get_cached_thumbnail, set_cached_thumbnail
 
@@ -116,6 +122,58 @@ async def generate_video_poster(source_path: str) -> Optional[str]:
 
     except Exception as exc:
         logger.warning("Video poster generation failed for %s: %s", source_path, exc)
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Video H.264 preview clip
+# ---------------------------------------------------------------------------
+
+
+async def generate_video_preview(source_path: str) -> Optional[str]:
+    """Generate a short (max 15 s) H.264/AAC MP4 preview of *source_path*.
+
+    The preview is transcoded by ffmpeg so it plays in all modern browsers,
+    including those without HEVC/H.265 support (Chrome, Firefox on Linux).
+    Results are cached; the first call blocks for 5–30 s depending on CPU
+    speed and source length.
+
+    Returns the path to the preview ``.mp4``, or ``None`` on failure.
+    """
+    cache_key = f"preview:{source_path}"
+    cached = await get_cached_thumbnail(cache_key)
+    if cached and Path(cached).exists():
+        return cached
+
+    raw_name = _thumb_filename(source_path)          # e.g. "abc123def456.jpg"
+    preview_name = raw_name.replace(".jpg", "_preview.mp4")
+    dest_path = _thumb_dir() / preview_name
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y",
+            "-i", source_path,
+            "-t", "15",                          # first 15 seconds only
+            "-vf", "scale='min(854,iw)':-2",     # max 480p-ish width; -2 keeps even dims
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-crf", "28",
+            "-c:a", "aac",
+            "-movflags", "+faststart",           # allow streaming before full download
+            str(dest_path),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(proc.wait(), timeout=120)
+
+        if dest_path.exists() and dest_path.stat().st_size > 0:
+            await set_cached_thumbnail(cache_key, str(dest_path))
+            logger.debug("Video preview generated: %s", dest_path)
+            return str(dest_path)
+
+    except Exception as exc:
+        logger.warning("Video preview generation failed for %s: %s", source_path, exc)
 
     return None
 

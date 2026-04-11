@@ -87,6 +87,33 @@ def create_app() -> FastAPI:
             return JSONResponse(status_code=404, content={"detail": "Thumbnail not available"})
         return FileResponse(thumb_path_str, media_type="image/jpeg")
 
+    # H.264 preview: GET /video-preview?src=<source_path>
+    @application.get("/video-preview")
+    async def serve_video_preview(src: str):
+        """Return an H.264/AAC MP4 preview clip for the given video source path.
+
+        Transcodes the first 15 seconds to H.264 so all browsers (including
+        those without HEVC support) can play the video track.  The result is
+        cached; the first request for a given file may take 5–30 s.
+
+        Security: only paths inside configured device backup roots are allowed.
+        """
+        from app.thumbnails import generate_video_preview
+
+        # Same path-traversal guard as /media
+        cfg           = get_config()
+        allowed_roots = [Path(d.path).resolve() for d in cfg.devices]
+        file_path     = Path(src).resolve()
+        if not any(file_path.is_relative_to(root) for root in allowed_roots):
+            raise HTTPException(status_code=403, detail="Access denied: path outside device roots")
+        if not file_path.exists() or not file_path.is_file():
+            raise HTTPException(status_code=404, detail="Source file not found")
+
+        preview_path = await generate_video_preview(src)
+        if not preview_path or not Path(preview_path).exists():
+            return JSONResponse(status_code=404, content={"detail": "Preview not available"})
+        return FileResponse(preview_path, media_type="video/mp4")
+
     return application
 
 
