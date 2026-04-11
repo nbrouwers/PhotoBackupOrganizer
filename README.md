@@ -10,11 +10,10 @@ A Python web application that runs in a Docker container on a Synology NAS. It s
 2. [Project structure](#project-structure)
 3. [Development setup](#development-setup)
 4. [Running tests](#running-tests)
-5. [Building the Docker image](#building-the-docker-image)
-6. [Publishing to a Docker registry](#publishing-to-a-docker-registry)
-7. [Deploying to a Synology NAS](#deploying-to-a-synology-nas)
-8. [Configuration reference](#configuration-reference)
-9. [Using the application](#using-the-application)
+5. [Building &amp; publishing the Docker image](#building-the-docker-image)
+6. [Deploying to a Synology NAS](#deploying-to-a-synology-nas)
+7. [Configuration reference](#configuration-reference)
+8. [Using the application](#using-the-application)
 
 ---
 
@@ -155,97 +154,148 @@ pytest tests/ -v
 
 ## Building the Docker image
 
-### Single-platform build (your local machine's architecture)
+The `build.ps1` PowerShell script handles everything: setting up cross-platform build tools, compiling the image for all supported NAS architectures, and publishing to a registry. All commands below are run in a **PowerShell** terminal from the root of this repository.
 
-```bash
-docker build -t photo-backup-organizer:latest .
+### Prerequisites
+
+**1. Install Docker Desktop**
+
+Docker Desktop bundles the Docker engine, the `docker` CLI, and Buildx (the multi-platform build extension).
+
+- Download from **https://www.docker.com/products/docker-desktop**
+- Run the installer, then start Docker Desktop.
+- Wait until the whale icon in the system tray is steady (not animated) — the engine is ready.
+
+To confirm Docker is working, open PowerShell and run:
+
+```powershell
+docker version
 ```
 
-### Multi-platform build (amd64 + arm64 — covers all current Synology NAS models)
+You should see version information for both the client and the server (daemon).
 
-This requires Docker Buildx (included with Docker Desktop and Docker Engine ≥ 19.03):
+**2. Create a free Docker Hub account**
 
-```bash
-# One-time setup: create a multi-platform builder
-docker buildx create --name multi --use
+Docker Hub is the default public registry where you'll store the image so your NAS can download it.
 
-# Build and push directly to a registry (see next section)
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  -t your-registry/photo-backup-organizer:latest \
-  --push \
-  .
-```
-
-> **Why multi-arch?** Synology NAS hardware spans both `amd64` (Intel Celeron / AMD Ryzen — most Plus-series models from x20 onward) and `arm64` (Realtek RTD1619B — budget models such as DS223, DS423). A multi-arch image works on both without any changes.
+- Sign up at **https://hub.docker.com**
+- Note your **username** — it forms part of the image name (e.g. `alice/photo-backup-organizer`).
 
 ---
 
-## Publishing to a Docker registry
+### Step 1 — Log in to Docker Hub
 
-Choose one of the following registries to host your image so the NAS can pull it.
-
-### Option A – Docker Hub (simplest)
-
-```bash
-# Log in
+```powershell
 docker login
-
-# Tag
-docker tag photo-backup-organizer:latest your-dockerhub-username/photo-backup-organizer:latest
-
-# Push
-docker push your-dockerhub-username/photo-backup-organizer:latest
 ```
 
-### Option B – GitHub Container Registry (ghcr.io)
+Enter your Docker Hub username and password when prompted. You only need to do this once per machine — the credentials are saved securely.
 
-```bash
-# Log in with a Personal Access Token (scope: write:packages)
-echo $GITHUB_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+---
 
-# Build and push
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/your-org/photo-backup-organizer:latest \
-  --push \
-  .
+### Step 2 — Test the build locally (optional but recommended)
+
+Before publishing, verify the image builds and runs correctly on your own machine:
+
+```powershell
+.\build.ps1 -LoadAmd64
 ```
 
-### Option C – Synology Container Registry (local, no internet needed)
+This builds a single-platform image (matching your PC's architecture) and loads it into your local Docker daemon. It takes a few minutes the first time — subsequent builds are much faster thanks to layer caching.
 
-Synology DSM 7.2+ ships with a built-in OCI registry via the **Container Registry** package.
+Once complete, the script prints a `docker run` command you can use to start the app on your PC:
 
-```bash
-# Replace <NAS_IP> with your NAS IP address; default registry port is 5000
-docker login <NAS_IP>:5000
-
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  -t <NAS_IP>:5000/photo-backup-organizer:latest \
-  --push \
-  .
+```
+    OK  Test locally:  docker run --rm -p 8000:8000 photo-backup-organizer:latest
 ```
 
-Enable the registry in DSM: **Container Manager → Registry → Settings → Enable local registry**.
+Open `http://localhost:8000` to confirm the UI loads correctly.
 
-### Option D – Export as a .tar archive (no registry)
+---
 
-If you prefer not to use any registry, export the image as a tar file and import it directly on the NAS.
+### Step 3 — Build for all NAS platforms and push to Docker Hub
+
+Synology NAS models use different CPU architectures:
+
+| Architecture | Synology models |
+|---|---|
+| `linux/amd64` | Intel/AMD models (DS220+, DS420+, DS720+, DS920+, DS923+, …) |
+| `linux/arm64` | ARM64 models (DS223j, DS423j — Realtek RTD1619B) |
+| `linux/arm/v7` | Older ARMv7 value-line models |
+
+A single multi-platform image covers all of them. The NAS automatically downloads the right variant for its hardware.
+
+Replace `your-dockerhub-username` with your actual Docker Hub username:
+
+```powershell
+.\build.ps1 -Registry your-dockerhub-username -Push
+```
+
+The script will:
+
+1. Check that Docker and Buildx are installed.
+2. Create a dedicated Buildx builder instance (`photo-backup-builder`) the first time — this is a lightweight build environment that supports cross-compilation.
+3. Install QEMU CPU emulation handlers so your x86 PC can compile ARM binaries.
+4. Build the image for all three platforms in parallel.
+5. Push a single multi-architecture manifest to Docker Hub under `your-dockerhub-username/photo-backup-organizer:latest`.
+
+> **Note:** Multi-platform builds cannot be loaded directly into your local Docker daemon — they must be pushed to a registry. Use `-LoadAmd64` (Step 2) for local testing.
+
+**Verify the image is live:**
+
+Once the push completes, open `https://hub.docker.com/r/your-dockerhub-username/photo-backup-organizer` in a browser. You should see the repository with the `latest` tag and the three platform digests listed under **OS/Arch**.
+
+---
+
+### Publishing to alternate registries
+
+#### GitHub Container Registry (ghcr.io)
+
+If your source code is on GitHub, GHCR is a convenient alternative — images are stored alongside your repository and inherit its access controls.
+
+```powershell
+# Log in using a GitHub Personal Access Token (requires the write:packages scope)
+$env:GITHUB_TOKEN = "ghp_your_token_here"
+echo $env:GITHUB_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+
+# Build and push (the full registry path is used as the -Registry value)
+.\build.ps1 -Registry ghcr.io/your-github-org -Push
+```
+
+#### Air-gapped / offline deployment (no registry needed)
+
+If your NAS has no internet access, export each platform as a standalone OCI tarball and copy it manually:
+
+```powershell
+.\build.ps1 -ExportOci
+```
+
+Tarballs are saved to `./dist/`:
+
+```
+dist/
+  linux-amd64.tar
+  linux-arm64.tar
+  linux-arm-v7.tar
+```
+
+Copy the file matching your NAS architecture to the NAS and import it:
 
 ```bash
-# Build for the NAS architecture (use arm64 if your NAS is ARM-based)
-docker build --platform linux/amd64 -t photo-backup-organizer:latest .
+# On the NAS (via SSH) — example for arm64
+docker load -i /volume1/docker/linux-arm64.tar
+```
 
-# Save to a tar file
-docker save photo-backup-organizer:latest | gzip > photo-backup-organizer.tar.gz
+#### Synology local registry (DSM 7.2+)
 
-# Copy to the NAS (replace user@nas-ip and the path as needed)
-scp photo-backup-organizer.tar.gz user@<NAS_IP>:/volume1/docker/
+DSM ships with a built-in OCI registry via the **Container Manager** package. Enable it first:
 
-# SSH into the NAS and load the image
-ssh user@<NAS_IP>
-docker load < /volume1/docker/photo-backup-organizer.tar.gz
+> **Container Manager → Registry → Settings → Enable local registry**
+
+Then push directly to it (no internet required):
+
+```powershell
+.\build.ps1 -Registry <NAS_IP>:5000 -Push
 ```
 
 ---

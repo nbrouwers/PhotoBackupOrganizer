@@ -1,12 +1,19 @@
 services:
   photo-backup-organizer:
+    # ── Image selection ─────────────────────────────────────────────────────
+    # For local development / testing, build from source:
     build:
       context: .
       dockerfile: Dockerfile
-      # On ARM NAS models (e.g. DS223, DS423) building locally on x86,
-      # uncomment the platform line below or use `docker buildx build --platform linux/arm64`
-      # platform: linux/arm64
-    image: photo-backup-organizer:latest
+    # For NAS deployment, pull the pre-built multi-platform image instead:
+    # image: ghcr.io/<owner>/photo-backup-organizer:latest
+    image: ${IMAGE:-photo-backup-organizer:latest}
+    # ── Platform selector ───────────────────────────────────────────────────
+    # Set COMPOSE_PLATFORM in your environment or .env file to match your NAS:
+    #   linux/amd64  — Intel/AMD Synology (DS220+, DS420+, DS720+, DS920+, DS923+)
+    #   linux/arm64  — ARM64 Synology     (DS223j, DS423j — Realtek RTD1619B)
+    #   linux/arm/v7 — ARMv7 Synology     (older value-line models)
+    platform: ${COMPOSE_PLATFORM:-linux/amd64}
     container_name: photo-backup-organizer
     restart: unless-stopped
     ports:

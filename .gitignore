@@ -35,3 +35,6 @@ config/config.yaml
 # Runtime data
 logs/
 cache/
+
+# Local reference / scratch files
+\# Exhaustive C# Code Constructs and Ref.md
