@@ -5,24 +5,22 @@ services:
     container_name: photo-backup-organizer
     restart: unless-stopped
     ports:
-      - "${PORT:-8000}:8000"
+      - "8000:8000"
     volumes:
       # Configuration file (read-only inside the container)
       - ./config:/config:ro
       # Phone backup source folders – must be writable so files can be moved out
-      - /volume1/backups:/backups:rw
+      - /volume1/homes/Alice/MobileBackup:/backups/alice:rw
+      - /volume1/homes/Bob/MobileBackup:/backups/bob:rw
       # Central photo and video library roots
-      - /volume1/photos:/photos:rw
-      - /volume1/videos:/videos:rw
-      # Persistent audit log
-      - /volume1/logs/photo-backup-organizer:/logs:rw
+      - /volume1/photo:/photos:rw
+      - /volume1/video:/videos:rw
+      # Persistent audit log (relative to docker-compose.yml location)
+      - ./logs:/logs:rw
       # Thumbnail / poster-frame cache (ephemeral; safe to delete)
-      - photo-backup-cache:/cache:rw
+      - ./cache:/cache:rw
     environment:
       - PHOTO_BACKUP_CONFIG=/config/config.yaml
     # Keep memory usage within NAS constraints (NFR-07)
     mem_limit: 512m
     memswap_limit: 512m
-
-volumes:
-  photo-backup-cache:
