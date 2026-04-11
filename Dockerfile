@@ -1,5 +1,7 @@
+# Target platform: linux/amd64 (Intel/AMD 64-bit)
+# Synology NAS: Celeron J4025 and other Intel 64-bit models
 # ── Builder stage ──────────────────────────────────────────────────────────────
-FROM python:3.12-slim-bookworm AS builder
+FROM --platform=linux/amd64 python:3.12-slim-bookworm AS builder
 
 WORKDIR /build
 
@@ -21,7 +23,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 
 # ── Runtime stage ──────────────────────────────────────────────────────────────
-FROM python:3.12-slim-bookworm AS runtime
+FROM --platform=linux/amd64 python:3.12-slim-bookworm AS runtime
 
 # ffmpeg supplies both ffprobe (video metadata) and the ffmpeg binary
 # (video poster frames).  The Debian bookworm repo ships ffmpeg 5.x with

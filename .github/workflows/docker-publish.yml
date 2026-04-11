@@ -2,14 +2,11 @@
 #
 # ┌─────────────────────────────────────────────────────────────────────────┐
 # │  Job 1 — test   : Install Python deps and run the full pytest suite     │
-# │  Job 2 — build  : Build multi-platform Docker image and publish         │
+# │  Job 2 — build  : Build Docker image and publish                        │
 # │                   (only runs when tests pass; skipped on forks)         │
 # └─────────────────────────────────────────────────────────────────────────┘
 #
-# Platforms built:
-#   linux/amd64   — Intel/AMD Synology (DS220+, DS420+, DS720+, DS920+, DS923+)
-#   linux/arm64   — ARM64 Synology     (DS223j, DS423j — Realtek RTD1619B)
-#   linux/arm/v7  — ARMv7 Synology     (older value-line models)
+# Platform: linux/amd64 (Intel Celeron J4025 — x86-64)
 #
 # Registries:
 #   GitHub Container Registry (GHCR) — always enabled, no secrets required.
@@ -83,12 +80,6 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      # QEMU lets the x86 runner compile ARM binaries without real hardware
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -142,7 +133,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags:    ${{ steps.meta.outputs.tags }}
           labels:  ${{ steps.meta.outputs.labels }}
