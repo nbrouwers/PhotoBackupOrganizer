@@ -1,0 +1,60 @@
+{% if progress.done %}
+  <div class="alert alert-success">
+    Last scan complete — found <strong>{{ progress.found }}</strong> unprocessed file(s).
+    <a href="/review">Review results →</a>
+  </div>
+{% elif progress.running %}
+  {# ── Live progress panel — re-rendered every 2 s by HTMX polling ── #}
+  <div class="card"
+       hx-get="/scan/progress"
+       hx-trigger="every 2s"
+       hx-target="#scan-status"
+       hx-swap="innerHTML">
+
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.4rem;">
+      <span style="font-weight:600;">
+        <span class="spinner" style="margin-right:.4rem;"></span>
+        Scanning&nbsp;<em>{{ progress.current_device or '…' }}</em>
+      </span>
+      <span style="font-size:var(--font-size-sm);color:var(--clr-text-2);">
+        {% if progress.total %}
+          {{ progress.scanned }} / {{ progress.total }} files
+        {% else %}
+          Counting files…
+        {% endif %}
+      </span>
+    </div>
+
+    {# Progress bar #}
+    <div style="background:var(--clr-border);border-radius:999px;height:12px;overflow:hidden;margin-bottom:.6rem;">
+      <div style="
+        width: {{ progress.percent }}%;
+        height: 100%;
+        background: var(--clr-primary);
+        border-radius: 999px;
+        transition: width .4s ease;
+        min-width: {% if progress.percent > 0 %}2px{% else %}0{% endif %};
+      "></div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;font-size:var(--font-size-sm);color:var(--clr-text-2);">
+      <span>
+        {% if progress.current_file %}
+          {{ progress.current_file }}
+        {% else %}
+          Discovering files…
+        {% endif %}
+      </span>
+      <span>
+        {{ progress.percent }}%
+        &nbsp;|&nbsp; <strong>{{ progress.found }}</strong> new file(s) found
+      </span>
+    </div>
+
+    {% if progress.error %}
+      <div class="alert alert-danger" style="margin-top:.75rem;">{{ progress.error }}</div>
+    {% endif %}
+  </div>
+{% else %}
+  <div class="alert alert-info">No scan has been run yet. Press <em>Scan now</em> to start.</div>
+{% endif %}

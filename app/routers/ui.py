@@ -96,6 +96,17 @@ async def serve_media(src: str) -> FileResponse:
     return FileResponse(str(file_path))
 
 
+@router.get("/scan/progress", response_class=HTMLResponse)
+async def scan_progress_partial(request: Request) -> HTMLResponse:
+    """HTMX partial — returns only the #scan-status inner HTML."""
+    progress = get_scan_progress()
+    return templates.TemplateResponse(
+        request,
+        "_scan_status.html",
+        {"progress": progress.to_dict()},
+    )
+
+
 @router.get("/confirm", response_class=HTMLResponse)
 async def confirm(request: Request) -> HTMLResponse:
     """Dry-run preview confirmation page."""

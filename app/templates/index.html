@@ -20,20 +20,6 @@
 </div>
 
 <div id="scan-status">
-  {% if progress.done %}
-    <div class="alert alert-success">Last scan complete – <a href="/review">review results</a>.</div>
-  {% elif progress.running %}
-    <div class="alert alert-info"
-         hx-get="/api/scan/status"
-         hx-trigger="every 2s"
-         hx-target="#scan-status"
-         hx-swap="innerHTML">
-      <span class="spinner"></span>
-      Scanning… device: <strong>{{ progress.current_device or '–' }}</strong>
-      &nbsp;|&nbsp; found: <strong>{{ progress.found }}</strong>
-    </div>
-  {% else %}
-    <div class="alert alert-info">No scan has been run yet. Press <em>Scan now</em> to start.</div>
-  {% endif %}
+  {% include "_scan_status.html" %}
 </div>
 {% endblock %}

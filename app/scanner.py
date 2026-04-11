@@ -76,17 +76,29 @@ class ScanProgress:
     def __init__(self) -> None:
         self.running: bool = False
         self.current_device: Optional[str] = None
-        self.scanned: int = 0
-        self.found: int = 0
+        self.current_file: Optional[str] = None   # filename being processed right now
+        self.scanned: int = 0                      # files processed so far (across all devices)
+        self.total: int = 0                        # total media files discovered in pre-count
+        self.found: int = 0                        # unprocessed files found so far
         self.result: Optional[ScanResult] = None
         self.error: Optional[str] = None
+
+    @property
+    def percent(self) -> int:
+        """0-100 progress percentage; 0 while total is not yet known."""
+        if not self.total:
+            return 0
+        return min(100, round(self.scanned * 100 / self.total))
 
     def to_dict(self) -> dict:
         return {
             "running": self.running,
             "current_device": self.current_device,
+            "current_file": self.current_file,
             "scanned": self.scanned,
+            "total": self.total,
             "found": self.found,
+            "percent": self.percent,
             "done": not self.running and self.result is not None,
             "error": self.error,
         }
@@ -108,33 +120,62 @@ def get_last_scan_result() -> Optional[ScanResult]:
 # ---------------------------------------------------------------------------
 
 
-async def _scan_device(device_path: Path, device_label: str) -> tuple[list[MediaFile], list[str]]:
-    """Recursively scan a single device folder and return (files, errors)."""
+def _collect_candidates(device_path: Path) -> list[Path]:
+    """Return all media files under *device_path* (recursive, sorted)."""
     cfg = get_config()
+    return sorted(
+        p for p in device_path.rglob("*")
+        if p.is_file() and p.suffix.lower() in cfg.all_extensions
+    )
+
+
+async def _scan_device(
+    device_path: Path,
+    device_label: str,
+    candidates: list[Path],
+) -> tuple[list[MediaFile], list[str]]:
+    """Process *candidates* for one device and return (files, errors).
+
+    Updates the module-level ``_progress`` as each file is examined.
+    """
     files: list[MediaFile] = []
     errors: list[str] = []
 
-    if not device_path.exists():
-        errors.append(f"Device path does not exist: {device_path}")
-        return files, errors
+    logger.info(
+        "[%s] Starting scan of %s — %d candidate file(s)",
+        device_label, device_path, len(candidates),
+    )
 
-    candidates = [
-        p for p in device_path.rglob("*")
-        if p.is_file() and p.suffix.lower() in cfg.all_extensions
-    ]
-
-    for file_path in candidates:
+    for idx, file_path in enumerate(candidates, start=1):
         path_str = str(file_path)
+        _progress.current_file = file_path.name
+
+        logger.debug(
+            "[%s] Examining file %d/%d: %s",
+            device_label, idx, len(candidates), file_path.name,
+        )
+
         try:
             if await is_processed(path_str):
+                logger.debug("[%s] Skipping already-processed file: %s", device_label, file_path.name)
+                _progress.scanned += 1
+                await asyncio.sleep(0)
                 continue
 
             media_type = get_media_type(file_path)
             if media_type is None:
+                _progress.scanned += 1
+                await asyncio.sleep(0)
                 continue
 
             capture_dt = await get_capture_date(file_path)
             size = file_path.stat().st_size
+
+            logger.debug(
+                "[%s] Found %s: %s  capture=%s  size=%d bytes",
+                device_label, media_type, file_path.name,
+                capture_dt.date().isoformat(), size,
+            )
 
             files.append(
                 MediaFile(
@@ -147,10 +188,21 @@ async def _scan_device(device_path: Path, device_label: str) -> tuple[list[Media
                     device_label=device_label,
                 )
             )
+            _progress.found += 1
+
         except Exception as exc:
-            logger.warning("Error processing %s: %s", file_path, exc)
+            logger.warning("[%s] Error processing %s: %s", device_label, file_path, exc)
             errors.append(f"{path_str}: {exc}")
 
+        _progress.scanned += 1
+        # Yield every 10 files so the event loop can handle status polls
+        if idx % 10 == 0:
+            await asyncio.sleep(0)
+
+    logger.info(
+        "[%s] Scan complete — examined %d, unprocessed found %d, errors %d",
+        device_label, len(candidates), len(files), len(errors),
+    )
     return files, errors
 
 
@@ -167,8 +219,15 @@ def _group_by_date(files: list[MediaFile]) -> list[DateGroup]:
 async def scan_all_devices() -> ScanResult:
     """Scan all configured devices and return a structured :class:`ScanResult`.
 
-    Updates the module-level :class:`ScanProgress` so callers can poll
-    ``/api/scan/status`` while the scan runs.
+    Phase 1 – pre-count: quickly walks every device folder to build the full
+    candidate list so the progress bar has an accurate total before any
+    metadata is extracted.
+
+    Phase 2 – process: extracts capture dates, checks the processed-files DB,
+    and builds the result grouped by device and date.
+
+    Updates the module-level :class:`ScanProgress` throughout so callers can
+    poll ``/api/scan/status`` for live progress.
     """
     global _progress
     _progress = ScanProgress()
@@ -177,26 +236,50 @@ async def scan_all_devices() -> ScanResult:
     result = ScanResult()
 
     try:
-        for device_cfg in cfg.devices:
-            _progress.current_device = device_cfg.label
-            device_path = Path(device_cfg.path)
+        # ── Phase 1: pre-count all candidate files ────────────────────────
+        logger.info("Scan started — pre-counting media files in %d device(s)", len(cfg.devices))
+        device_candidates: list[tuple[str, Path, list[Path]]] = []
 
-            files, errors = await _scan_device(device_path, device_cfg.label)
+        for device_cfg in cfg.devices:
+            device_path = Path(device_cfg.path)
+            _progress.current_device = device_cfg.label
+            _progress.current_file = None
+
+            if not device_path.exists():
+                logger.warning("[%s] Device path does not exist: %s", device_cfg.label, device_path)
+                result.errors.append(f"Device path does not exist: {device_path}")
+                device_candidates.append((device_cfg.label, device_path, []))
+                continue
+
+            logger.info("[%s] Pre-counting files in %s …", device_cfg.label, device_path)
+            candidates = _collect_candidates(device_path)
+            device_candidates.append((device_cfg.label, device_path, candidates))
+            _progress.total += len(candidates)
+            logger.info("[%s] Found %d media file(s) to examine", device_cfg.label, len(candidates))
+            await asyncio.sleep(0)
+
+        logger.info("Pre-count complete — %d total media file(s) across all devices", _progress.total)
+
+        # ── Phase 2: process each device ──────────────────────────────────
+        for device_label, device_path, candidates in device_candidates:
+            _progress.current_device = device_label
+            _progress.current_file = None
+
+            if not candidates:
+                continue
+
+            files, errors = await _scan_device(device_path, device_label, candidates)
             result.errors.extend(errors)
-            _progress.scanned += sum(1 for _ in Path(device_cfg.path).rglob("*") if Path(_).is_file()) if device_path.exists() else 0
-            _progress.found += len(files)
 
             if files:
                 date_groups = _group_by_date(files)
-                result.devices.append(
-                    DeviceGroup(label=device_cfg.label, date_groups=date_groups)
-                )
+                result.devices.append(DeviceGroup(label=device_label, date_groups=date_groups))
                 result.total_files += len(files)
 
-            # Yield control so other async tasks can run
             await asyncio.sleep(0)
 
     except Exception as exc:
+        logger.exception("Unexpected error during scan: %s", exc)
         _progress.error = str(exc)
         logger.exception("Scan failed: %s", exc)
     finally:
