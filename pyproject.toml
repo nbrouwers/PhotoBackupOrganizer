@@ -9,7 +9,7 @@ description = "Organizes phone backup photos and videos into a curated NAS libra
 requires-python = ">=3.9"
 dependencies = [
     "fastapi>=0.111.0",
-    "uvicorn[standard]>=0.29.0",
+    "uvicorn>=0.29.0",
     "jinja2>=3.1.4",
     "python-multipart>=0.0.9",
     "aiosqlite>=0.20.0",
