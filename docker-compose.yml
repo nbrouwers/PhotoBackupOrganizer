@@ -5,7 +5,7 @@ services:
     container_name: photo-backup-organizer
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "9121:8000"
     volumes:
       # Configuration file (read-only inside the container)
       - ./config:/config:ro

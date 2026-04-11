@@ -390,7 +390,7 @@ docker compose restart
 
 ## Using the application
 
-Open `http://<NAS_IP>:8000` in a browser on your local network.
+Open `http://<NAS_IP>:9121` in a browser on your local network.
 
 ### Workflow
 
@@ -441,7 +441,7 @@ A persistent audit log is also written to `/logs/photo-backup-organizer.log` on 
 
 ### REST API
 
-The application also exposes a JSON API (documented at `http://<NAS_IP>:8000/docs`):
+The application also exposes a JSON API (documented at `http://<NAS_IP>:9121/docs`):
 
 | Method | Path | Description |
 |---|---|---|
