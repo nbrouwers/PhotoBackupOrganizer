@@ -261,22 +261,6 @@ No changes to the workflow file are needed — the pipeline detects the secrets 
 
 ---
 
-### Building locally (requires Docker Desktop)
-
-If you later install Docker Desktop on your machine, you can build and run the image locally:
-
-```bash
-# Build the image
-docker build --platform linux/amd64 -t photo-backup-organizer:latest .
-
-# Run it locally for testing
-docker run --rm -p 8000:8000 \
-  -v ./config:/config:ro \
-  photo-backup-organizer:latest
-```
-
----
-
 ## Deploying to a Synology NAS
 
 ### Prerequisites on the NAS
@@ -321,18 +305,14 @@ Then edit `/volume1/docker/photo-backup-organizer/config/config.yaml` on the NAS
 scp docker-compose.yml user@<NAS_IP>:/volume1/docker/photo-backup-organizer/
 ```
 
-Edit the volume paths in `docker-compose.yml` to match your NAS volume layout if they differ from the defaults.
-
 ### 4a. Deploy with docker compose (SSH)
 
 ```bash
 ssh user@<NAS_IP>
 cd /volume1/docker/photo-backup-organizer
 
-# Pull from registry
+# Pull the image from Docker Hub and start
 docker compose pull
-
-# Start in the background
 docker compose up -d
 ```
 

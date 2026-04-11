@@ -1,11 +1,6 @@
 services:
   photo-backup-organizer:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    # For NAS deployment, pull the pre-built image instead:
-    # image: ghcr.io/<owner>/photo-backup-organizer:latest
-    image: ${IMAGE:-photo-backup-organizer:latest}
+    image: nbrouwers/photo-backup-organizer:latest
     platform: linux/amd64   # Intel Celeron J4025 (x86-64)
     container_name: photo-backup-organizer
     restart: unless-stopped
