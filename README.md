@@ -10,7 +10,7 @@ A Python web application that runs in a Docker container on a Synology NAS. It s
 2. [Project structure](#project-structure)
 3. [Development setup](#development-setup)
 4. [Running tests](#running-tests)
-5. [Building &amp; publishing the Docker image](#building-the-docker-image)
+5. [Building &amp; publishing the Docker image (GitHub Actions CI/CD)](#building-the-docker-image)
 6. [Deploying to a Synology NAS](#deploying-to-a-synology-nas)
 7. [Configuration reference](#configuration-reference)
 8. [Using the application](#using-the-application)
@@ -154,68 +154,9 @@ pytest tests/ -v
 
 ## Building the Docker image
 
-The `build.ps1` PowerShell script handles everything: setting up cross-platform build tools, compiling the image for all supported NAS architectures, and publishing to a registry. All commands below are run in a **PowerShell** terminal from the root of this repository.
+The repository includes a GitHub Actions CI/CD pipeline (`.github/workflows/docker-publish.yml`) that **automatically builds and publishes the Docker image every time you push to `main`** — no Docker installation required on your own machine.
 
-### Prerequisites
-
-**1. Install Docker Desktop**
-
-Docker Desktop bundles the Docker engine, the `docker` CLI, and Buildx (the multi-platform build extension).
-
-- Download from **https://www.docker.com/products/docker-desktop**
-- Run the installer, then start Docker Desktop.
-- Wait until the whale icon in the system tray is steady (not animated) — the engine is ready.
-
-To confirm Docker is working, open PowerShell and run:
-
-```powershell
-docker version
-```
-
-You should see version information for both the client and the server (daemon).
-
-**2. Create a free Docker Hub account**
-
-Docker Hub is the default public registry where you'll store the image so your NAS can download it.
-
-- Sign up at **https://hub.docker.com**
-- Note your **username** — it forms part of the image name (e.g. `alice/photo-backup-organizer`).
-
----
-
-### Step 1 — Log in to Docker Hub
-
-```powershell
-docker login
-```
-
-Enter your Docker Hub username and password when prompted. You only need to do this once per machine — the credentials are saved securely.
-
----
-
-### Step 2 — Test the build locally (optional but recommended)
-
-Before publishing, verify the image builds and runs correctly on your own machine:
-
-```powershell
-.\build.ps1 -LoadAmd64
-```
-
-This builds a single-platform image (matching your PC's architecture) and loads it into your local Docker daemon. It takes a few minutes the first time — subsequent builds are much faster thanks to layer caching.
-
-Once complete, the script prints a `docker run` command you can use to start the app on your PC:
-
-```
-    OK  Test locally:  docker run --rm -p 8000:8000 photo-backup-organizer:latest
-```
-
-Open `http://localhost:8000` to confirm the UI loads correctly.
-
----
-
-### Step 3 — Build for all NAS platforms and push to Docker Hub
-
-Synology NAS models use different CPU architectures:
+Synology NAS models use different CPU architectures; the pipeline builds for all of them at once:
 
 | Architecture | Synology models |
 |---|---|
@@ -223,80 +164,133 @@ Synology NAS models use different CPU architectures:
 | `linux/arm64` | ARM64 models (DS223j, DS423j — Realtek RTD1619B) |
 | `linux/arm/v7` | Older ARMv7 value-line models |
 
-A single multi-platform image covers all of them. The NAS automatically downloads the right variant for its hardware.
-
-Replace `your-dockerhub-username` with your actual Docker Hub username:
-
-```powershell
-.\build.ps1 -Registry your-dockerhub-username -Push
-```
-
-The script will:
-
-1. Check that Docker and Buildx are installed.
-2. Create a dedicated Buildx builder instance (`photo-backup-builder`) the first time — this is a lightweight build environment that supports cross-compilation.
-3. Install QEMU CPU emulation handlers so your x86 PC can compile ARM binaries.
-4. Build the image for all three platforms in parallel.
-5. Push a single multi-architecture manifest to Docker Hub under `your-dockerhub-username/photo-backup-organizer:latest`.
-
-> **Note:** Multi-platform builds cannot be loaded directly into your local Docker daemon — they must be pushed to a registry. Use `-LoadAmd64` (Step 2) for local testing.
-
-**Verify the image is live:**
-
-Once the push completes, open `https://hub.docker.com/r/your-dockerhub-username/photo-backup-organizer` in a browser. You should see the repository with the `latest` tag and the three platform digests listed under **OS/Arch**.
+The NAS automatically selects the correct variant when it pulls the image.
 
 ---
 
-### Publishing to alternate registries
+### How the pipeline works
 
-#### GitHub Container Registry (ghcr.io)
+The workflow runs two jobs in sequence:
 
-If your source code is on GitHub, GHCR is a convenient alternative — images are stored alongside your repository and inherit its access controls.
-
-```powershell
-# Log in using a GitHub Personal Access Token (requires the write:packages scope)
-$env:GITHUB_TOKEN = "ghp_your_token_here"
-echo $env:GITHUB_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
-
-# Build and push (the full registry path is used as the -Registry value)
-.\build.ps1 -Registry ghcr.io/your-github-org -Push
+```
+push to main
+      │
+      ▼
+┌─────────────┐   all tests pass   ┌──────────────────────────┐
+│  Job 1:     │ ─────────────────► │  Job 2:                  │
+│  test       │                    │  build                   │
+│             │                    │                          │
+│  pytest     │                    │  QEMU + Docker Buildx    │
+│  (Python    │                    │  → linux/amd64           │
+│   3.12)     │                    │  → linux/arm64           │
+│             │                    │  → linux/arm/v7          │
+└─────────────┘                    │  → push to registry      │
+                                   └──────────────────────────┘
 ```
 
-#### Air-gapped / offline deployment (no registry needed)
+- **If tests fail**, the build job is cancelled and no image is published.
+- **Pull requests** trigger the test and build jobs but do not push the image.
+- **Layer caching** is enabled so subsequent builds only recompile what changed.
 
-If your NAS has no internet access, export each platform as a standalone OCI tarball and copy it manually:
+---
+
+### Step 1 — Push the repository to GitHub
+
+Create a new repository on GitHub and push:
+
+```bash
+git remote add origin https://github.com/your-username/photo-backup-organizer.git
+git push -u origin main
+```
+
+The Actions workflow file is already committed and will be picked up immediately.
+
+---
+
+### Step 2 — Watch the first run
+
+1. Open your repository on GitHub.
+2. Click the **Actions** tab.
+3. You will see a workflow run called **"CI — Test, Build & Publish"** in progress.
+4. Click it to see the two jobs: **Run tests** and **Build & publish Docker image**.
+
+The first build takes approximately 10–15 minutes (QEMU cross-compilation is slower than native). Subsequent builds take 3–5 minutes thanks to the layer cache.
+
+---
+
+### Step 3 — Find your published image
+
+Once the workflow completes successfully, the image is published to **GitHub Container Registry (GHCR)** — automatically, with no extra credentials needed:
+
+```
+ghcr.io/your-username/photo-backup-organizer:latest
+```
+
+To browse it: open your GitHub repository → **Packages** (right-hand sidebar).
+
+**Images are tagged automatically:**
+
+| Tag | When it's created |
+|---|---|
+| `latest` | Every push to `main` |
+| `main` | Every push to the `main` branch |
+| `sha-<7chars>` | Every push (points at that exact commit) |
+| `v1.2` / `1.2.3` | When you push a Git tag like `v1.2.3` |
+
+---
+
+### Step 4 (optional) — Also push to Docker Hub
+
+GHCR is private by default (accessible with a GitHub token). If you want a **public image** anyone can pull without authentication, add Docker Hub as a second registry.
+
+**a) Create a Docker Hub access token**
+
+1. Sign up at **https://hub.docker.com** (free).
+2. Click your avatar → **Account Settings → Security → New Access Token**.
+3. Give it a description (e.g. `github-actions`) and click **Generate**.
+4. Copy the token — it is only shown once.
+
+**b) Add secrets to your GitHub repository**
+
+1. Open your repository on GitHub.
+2. Go to **Settings → Secrets and variables → Actions**.
+3. Click **New repository secret** twice:
+
+| Secret name | Value |
+|---|---|
+| `DOCKERHUB_USERNAME` | Your Docker Hub username |
+| `DOCKERHUB_TOKEN` | The access token you just generated |
+
+Once both secrets are present, the next push to `main` will automatically log in to Docker Hub and publish the image there as well:
+
+```
+your-dockerhub-username/photo-backup-organizer:latest
+```
+
+No changes to the workflow file are needed — the pipeline detects the secrets automatically.
+
+---
+
+### Building locally (requires Docker Desktop)
+
+If you later install Docker Desktop on your machine, use the included PowerShell script for local builds:
 
 ```powershell
+# Build and run locally (amd64 only)
+.\build.ps1 -LoadAmd64
+
+# Build all platforms and push to Docker Hub
+.\build.ps1 -Registry your-dockerhub-username -Push
+
+# Export OCI tarballs for offline NAS deployment
 .\build.ps1 -ExportOci
 ```
 
-Tarballs are saved to `./dist/`:
+---
 
-```
-dist/
-  linux-amd64.tar
-  linux-arm64.tar
-  linux-arm-v7.tar
-```
+## Deploying to a Synology NAS
 
-Copy the file matching your NAS architecture to the NAS and import it:
-
-```bash
-# On the NAS (via SSH) — example for arm64
-docker load -i /volume1/docker/linux-arm64.tar
-```
-
-#### Synology local registry (DSM 7.2+)
-
-DSM ships with a built-in OCI registry via the **Container Manager** package. Enable it first:
-
-> **Container Manager → Registry → Settings → Enable local registry**
-
-Then push directly to it (no internet required):
-
-```powershell
-.\build.ps1 -Registry <NAS_IP>:5000 -Push
-```
+### Prerequisites on the NAS
 
 ---
 
