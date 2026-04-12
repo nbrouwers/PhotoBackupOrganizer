@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from app.config import get_config
 from app.mover import MoveAssignment, dry_run_batch, execute_batch
 
 logger = logging.getLogger(__name__)
@@ -85,6 +86,55 @@ async def execute(req: BatchRequest) -> dict:
         "summary": result.summary,
         "files": [_file_result_dict(f) for f in result.files],
     }
+
+
+# ---------------------------------------------------------------------------
+# Delete endpoint
+# ---------------------------------------------------------------------------
+
+
+class DeleteRequest(BaseModel):
+    paths: list[str]
+
+
+@router.post("/delete")
+async def delete_files(req: DeleteRequest) -> dict:
+    """Permanently delete source files by path.
+
+    Each path is validated to be within a configured device source directory
+    to prevent path traversal attacks.
+    """
+    if not req.paths:
+        raise HTTPException(status_code=422, detail="No paths provided")
+
+    cfg = get_config()
+    allowed_roots = [Path(d.path).resolve() for d in cfg.devices]
+
+    results: list[dict] = []
+    for raw_path in req.paths:
+        try:
+            p = Path(raw_path).resolve()
+        except Exception:
+            results.append({"path": raw_path, "status": "error", "message": "Invalid path"})
+            continue
+
+        # Security: only allow deletion within configured device source directories
+        if not any(p.is_relative_to(root) for root in allowed_roots):
+            logger.warning("Delete attempt outside allowed roots: %s", p)
+            results.append({"path": raw_path, "status": "error", "message": "Path not in a source directory"})
+            continue
+
+        try:
+            p.unlink()
+            logger.info("Deleted: %s", p)
+            results.append({"path": raw_path, "status": "deleted"})
+        except FileNotFoundError:
+            results.append({"path": raw_path, "status": "not_found"})
+        except OSError as exc:
+            results.append({"path": raw_path, "status": "error", "message": str(exc)})
+
+    deleted = sum(1 for r in results if r["status"] == "deleted")
+    return {"deleted": deleted, "total": len(req.paths), "results": results}
 
 
 # ---------------------------------------------------------------------------

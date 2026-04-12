@@ -255,6 +255,7 @@ const VIDEOS_ROOT = {{ videos_root | tojson }};
     </div>
   </div>
   <div id="top-bar-right">
+    <button class="btn btn-danger btn-sm" id="delete-btn" onclick="deleteSelected()" disabled title="Delete selected files from disk">🗑 Delete</button>
     <button class="btn btn-primary" onclick="submitForm('dry-run')">🔍 Dry-run preview</button>
     <button class="btn btn-success" onclick="submitForm('execute')">▶ Move now</button>
   </div>
@@ -371,9 +372,15 @@ function applyFilterSort() {
 function allCards() { return Array.from(document.querySelectorAll('.file-card')); }
 function cardBySrc(src) { return document.querySelector(`.file-card[data-src="${CSS.escape(src)}"]`); }
 
+function syncDeleteBtn() {
+  const btn = document.getElementById('delete-btn');
+  if (btn) btn.disabled = selected.size === 0;
+}
+
 function clearSelection() {
   selected.forEach(s => cardBySrc(s)?.classList.remove('selected'));
   selected.clear();
+  syncDeleteBtn();
 }
 
 function selectOnly(card) {
@@ -381,6 +388,7 @@ function selectOnly(card) {
   selected.add(card.dataset.src);
   card.classList.add('selected');
   _lastClickedSrc = card.dataset.src;
+  syncDeleteBtn();
 }
 
 function toggleSelect(card) {
@@ -392,6 +400,7 @@ function toggleSelect(card) {
     card.classList.add('selected');
   }
   _lastClickedSrc = card.dataset.src;
+  syncDeleteBtn();
 }
 
 function rangeSelectTo(card) {
@@ -404,6 +413,7 @@ function rangeSelectTo(card) {
     cards[i].classList.add('selected');
   }
   _lastClickedSrc = card.dataset.src;
+  syncDeleteBtn();
 }
 
 // ── Lightbox ─────────────────────────────────────────────────────────────────
@@ -820,6 +830,52 @@ async function confirmExecute(listJson) {
 
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Delete selected ───────────────────────────────────────────────────────────
+async function deleteSelected() {
+  if (!selected.size) return;
+  const paths = [...selected];
+  const noun  = paths.length === 1 ? 'file' : 'files';
+  if (!confirm(`Permanently delete ${paths.length} ${noun} from disk?\nThis cannot be undone.`)) return;
+
+  const resp = await fetch('/api/move/delete', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ paths }),
+  });
+  if (!resp.ok) {
+    alert('Delete request failed. Check the console for details.');
+    console.error('DELETE failed', resp.status, await resp.text());
+    return;
+  }
+  const data = await resp.json();
+
+  for (const r of data.results) {
+    if (r.status === 'deleted' || r.status === 'not_found') {
+      const card = cardBySrc(r.path);
+      if (!card) continue;
+      // Clean up assignment if present
+      const prev = assignments.get(r.path);
+      if (prev) {
+        const z = document.querySelector(`.dest-zone[data-dest-dir="${CSS.escape(prev.destDir)}"]`);
+        if (z) { z.dataset.count = Math.max(0, parseInt(z.dataset.count || '0') - 1); refreshZoneCount(prev.destDir); }
+        assignments.delete(r.path);
+      }
+      selected.delete(r.path);
+      card.remove();
+    } else {
+      console.warn('Could not delete', r.path, r.message);
+    }
+  }
+
+  syncDeleteBtn();
+  updateCounts();
+
+  const failed = paths.length - data.deleted;
+  if (failed > 0) {
+    alert(`Deleted ${data.deleted} of ${paths.length} file(s).\n${failed} could not be deleted — see the browser console for details.`);
+  }
 }
 </script>
 {% endblock %}
