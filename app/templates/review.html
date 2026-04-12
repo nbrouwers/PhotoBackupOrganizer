@@ -1057,15 +1057,14 @@ function renderDryRunResult(data, list) {
     <h2>Dry-run Preview</h2>
     <div style="display:flex;gap:.8rem;margin-bottom:1rem;flex-wrap:wrap;">
       <span class="badge badge-move">Move: ${s.move||0}</span>
-      <span class="badge badge-rename">Rename: ${s.rename||0}</span>
-      <span class="badge badge-skip">Skip (dup): ${s.skip_duplicate||0}</span>
+      <span class="badge badge-skip">Skip: ${s.skip_duplicate||0}</span>
       <span class="badge badge-error">Error: ${s.error||0}</span>
     </div>
     <table><thead><tr>
       <th>File</th><th>Action</th><th>Destination</th><th>Note</th>
     </tr></thead><tbody>`;
   for (const f of data.files) {
-    const cls = {move:'badge-move',rename:'badge-rename',skip_duplicate:'badge-skip'}[f.action] || 'badge-error';
+    const cls = {move:'badge-move',skip_duplicate:'badge-skip'}[f.action] || 'badge-error';
     html += `<tr>
       <td>${escHtml(f.original_filename)}</td>
       <td><span class="badge ${cls}">${escHtml(f.action)}</span></td>

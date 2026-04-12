@@ -51,18 +51,18 @@ class TestDryRunBatch:
         assert result.files[0].action == "move"
         assert result.files[0].final_filename == "IMG_001.jpg"
 
-    def test_collision_predicted_as_rename(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_collision_predicted_as_skip(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         _setup_config(tmp_path, monkeypatch)
         src = tmp_path / "backups" / "phone" / "IMG_001.jpg"
         dest_dir = tmp_path / "photos" / "2024" / "Q1"
         existing = dest_dir / "IMG_001.jpg"
         _write_file(src, b"source content")
-        _write_file(existing, b"different existing content")  # Not a duplicate
+        _write_file(existing, b"different existing content")  # Same name, different content
 
         result = dry_run_batch([MoveAssignment(str(src), str(dest_dir))])
 
-        assert result.files[0].action == "rename"
-        assert result.files[0].final_filename == "IMG_001_1.jpg"
+        assert result.files[0].action == "skip_duplicate"
+        assert result.files[0].final_filename == "IMG_001.jpg"
 
     def test_duplicate_predicted_as_skip(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         _setup_config(tmp_path, monkeypatch)
@@ -137,7 +137,7 @@ class TestExecuteBatch:
         assert src.exists()  # Not removed when skipped
 
     @pytest.mark.asyncio
-    async def test_collision_resolved_with_suffix(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_collision_skipped(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         _setup_config(tmp_path, monkeypatch)
         src = tmp_path / "backups" / "phone" / "IMG_030.jpg"
         dest_dir = tmp_path / "photos" / "2025" / "Q1"
@@ -147,6 +147,6 @@ class TestExecuteBatch:
 
         result = await execute_batch([MoveAssignment(str(src), str(dest_dir))])
 
-        assert result.files[0].action == "rename"
-        assert (dest_dir / "IMG_030_1.jpg").exists()
-        assert not src.exists()
+        assert result.files[0].action == "skip_duplicate"
+        assert src.exists()  # Source kept when skipped
+        assert not (dest_dir / "IMG_030_1.jpg").exists()  # No renamed copy created

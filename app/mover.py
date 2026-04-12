@@ -21,12 +21,11 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from app.database import mark_processed
-from app.destinations import ensure_quarterly_folder
-from app.duplicates import file_hash, is_duplicate
+from app.duplicates import is_duplicate
 
 logger = logging.getLogger(__name__)
 
-MoveAction = Literal["move", "rename", "skip_duplicate", "error"]
+MoveAction = Literal["move", "skip_duplicate", "error"]
 
 
 # ---------------------------------------------------------------------------
@@ -75,32 +74,6 @@ class BatchResult:
         for f in self.files:
             counts[f.action] = counts.get(f.action, 0) + 1
         return counts
-
-
-# ---------------------------------------------------------------------------
-# Filename collision resolution (FR-12)
-# ---------------------------------------------------------------------------
-
-
-def _resolve_filename(dest_dir: Path, filename: str) -> tuple[Path, str, Optional[str]]:
-    """Return ``(final_path, final_filename, conflict_note)``.
-
-    If *filename* does not exist in *dest_dir*, returns it unchanged.
-    Otherwise appends ``_1``, ``_2``, … to the stem until a free slot is found.
-    """
-    stem = Path(filename).stem
-    suffix = Path(filename).suffix
-    candidate = dest_dir / filename
-    note: Optional[str] = None
-
-    counter = 1
-    while candidate.exists():
-        new_name = f"{stem}_{counter}{suffix}"
-        candidate = dest_dir / new_name
-        note = f"Renamed from {filename} to avoid collision"
-        counter += 1
-
-    return candidate, candidate.name, note
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +136,22 @@ def _simulate_file(src_path: str, dest_dir_str: str) -> FileResult:
     src = Path(src_path)
     dest_dir = Path(dest_dir_str)
     original_filename = src.name
+    candidate = dest_dir / original_filename
 
+    # Skip when a file with the same name already exists at the destination,
+    # regardless of content.  The user should review and resolve conflicts
+    # manually rather than risk overwriting or creating confusing duplicates.
+    if candidate.exists():
+        return FileResult(
+            src=src_path,
+            final_dest=str(candidate),
+            action="skip_duplicate",
+            original_filename=original_filename,
+            final_filename=original_filename,
+            conflict_note="File with same name already exists at destination",
+        )
+
+    # Also skip when an identical file exists under a different name.
     if is_duplicate(src, dest_dir):
         return FileResult(
             src=src_path,
@@ -171,19 +159,15 @@ def _simulate_file(src_path: str, dest_dir_str: str) -> FileResult:
             action="skip_duplicate",
             original_filename=original_filename,
             final_filename=original_filename,
-            conflict_note="Identical file already exists in destination",
+            conflict_note="Identical file already exists in destination (different name)",
         )
-
-    final_path, final_filename, note = _resolve_filename(dest_dir, original_filename)
-    action: MoveAction = "rename" if note else "move"
 
     return FileResult(
         src=src_path,
-        final_dest=str(final_path),
-        action=action,
+        final_dest=str(candidate),
+        action="move",
         original_filename=original_filename,
-        final_filename=final_filename,
-        conflict_note=note,
+        final_filename=original_filename,
     )
 
 
@@ -224,6 +208,23 @@ async def execute_batch(assignments: list[MoveAssignment]) -> BatchResult:
         original_filename = src.name
 
         try:
+            candidate = dest_dir / original_filename
+
+            # Skip when a file with the same name already exists at destination.
+            if candidate.exists():
+                file_result = FileResult(
+                    src=assignment.src_path,
+                    final_dest=str(candidate),
+                    action="skip_duplicate",
+                    original_filename=original_filename,
+                    final_filename=original_filename,
+                    conflict_note="File with same name already exists at destination",
+                )
+                result.files.append(file_result)
+                _write_audit_entry(file_result)
+                continue
+
+            # Skip when an identical file exists under a different name.
             if is_duplicate(src, dest_dir):
                 file_result = FileResult(
                     src=assignment.src_path,
@@ -231,29 +232,28 @@ async def execute_batch(assignments: list[MoveAssignment]) -> BatchResult:
                     action="skip_duplicate",
                     original_filename=original_filename,
                     final_filename=original_filename,
-                    conflict_note="Identical file already exists in destination",
+                    conflict_note="Identical file already exists in destination (different name)",
                 )
                 result.files.append(file_result)
                 _write_audit_entry(file_result)
                 continue
 
-            ensure_quarterly_folder(dest_dir)  # Creates dir if needed (safe no-op for event dirs)
-            final_path, final_filename, note = _resolve_filename(dest_dir, original_filename)
-            action: MoveAction = "rename" if note else "move"
+            # Create destination folder only when a file is actually being moved
+            # (prevents empty folder creation for mirrored video dirs with no videos).
+            dest_dir.mkdir(parents=True, exist_ok=True)
 
             # Write first, delete only on success (NFR-02)
-            shutil.copy2(str(src), str(final_path))
+            shutil.copy2(str(src), str(candidate))
             os.remove(str(src))
 
-            await mark_processed(assignment.src_path, str(final_path))
+            await mark_processed(assignment.src_path, str(candidate))
 
             file_result = FileResult(
                 src=assignment.src_path,
-                final_dest=str(final_path),
-                action=action,
+                final_dest=str(candidate),
+                action="move",
                 original_filename=original_filename,
-                final_filename=final_filename,
-                conflict_note=note,
+                final_filename=original_filename,
             )
 
         except Exception as exc:
