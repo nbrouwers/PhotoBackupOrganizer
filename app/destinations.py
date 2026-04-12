@@ -191,6 +191,31 @@ def ensure_folder_path(media_type: MediaType, rel_path: str) -> Path:
     return target
 
 
+def count_files_at(media_type: MediaType, rel_path: str = "") -> int:
+    """Return the count of non-hidden files at ``<library_root>/<rel_path>``.
+
+    Used by the folder-count API to display existing content in destination zones.
+    Security: *rel_path* is resolved and must not escape the library root.
+    """
+    root = _library_root(media_type).resolve()
+    if rel_path:
+        target = (root / rel_path.replace("\\", "/")).resolve()
+        if not str(target).startswith(str(root)):
+            raise ValueError(f"Path {rel_path!r} escapes the library root")
+    else:
+        target = root
+    if not target.exists():
+        return 0
+    try:
+        return sum(
+            1
+            for f in target.iterdir()
+            if f.is_file() and not f.name.startswith(".") and f.name not in _SYNOLOGY_SKIP
+        )
+    except OSError:
+        return 0
+
+
 def ensure_child_folder(media_type: MediaType, name: str) -> Path:
     """Create and return ``<library_root>/<name>``.
 

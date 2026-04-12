@@ -126,7 +126,7 @@
     border-radius: 10px;
     padding: .1rem .5rem;
     color: var(--clr-text-3);
-    min-width: 22px;
+    white-space: nowrap;
     text-align: center;
   }
   .dest-section-title {
@@ -585,22 +585,27 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Zone DOM helper ───────────────────────────────────────────────────────────
-function addDestZone(photoDir, videoDir, label) {
+function addDestZone(photoDir, videoDir, label, photoRel = '', videoRel = '') {
   const container = document.getElementById('dest-zones');
   const empty     = document.getElementById('dest-empty');
   if (empty) empty.style.display = 'none';
 
   const zone = document.createElement('div');
-  zone.className        = 'dest-zone';
-  zone.dataset.photoDir = photoDir;
-  zone.dataset.videoDir = videoDir || photoDir;
-  zone.dataset.count    = '0';
+  zone.className               = 'dest-zone';
+  zone.dataset.photoDir        = photoDir;
+  zone.dataset.videoDir        = videoDir || photoDir;
+  zone.dataset.photoRel        = photoRel;
+  zone.dataset.videoRel        = videoRel;
+  zone.dataset.pendingPhotos   = '0';
+  zone.dataset.pendingVideos   = '0';
+  zone.dataset.existingPhotos  = '';   // '' = loading
+  zone.dataset.existingVideos  = '';
   const titleAttr = 'Photo: ' + photoDir + (videoDir && videoDir !== photoDir ? '\nVideo: ' + videoDir : '');
   zone.innerHTML = `
     <div class="dest-zone-header">
       <span title="${escHtml(titleAttr)}">${escHtml(label)}</span>
       <div style="display:flex;align-items:center;gap:.4rem;">
-        <span class="dest-count">0</span>
+        <span class="dest-count">…</span>
         <button class="dest-remove" onclick="removeDestZone(this)" title="Remove destination">&times;</button>
       </div>
     </div>`;
@@ -608,6 +613,7 @@ function addDestZone(photoDir, videoDir, label) {
   zone.addEventListener('dragleave', ()  => zone.classList.remove('drag-over'));
   zone.addEventListener('drop',      e  => { e.preventDefault(); zone.classList.remove('drag-over'); handleDrop(zone, e); });
   container.appendChild(zone);
+  fetchZoneExistingCounts(zone);
   saveZones();
 }
 
@@ -796,26 +802,29 @@ async function addDestination() {
     alert('Please select a photo destination folder.'); return;
   }
   const photoDir   = _photoTree.selectedPath;
-  const photoLabel = _photoTree.selectedRel || _photoTree.selectedLabel;
+  const photoRel   = _photoTree.selectedRel || '';
+  const photoLabel = photoRel || _photoTree.selectedLabel;
 
-  let videoDir;
+  let videoDir, videoRel;
   if (mirror) {
     const sep = VIDEOS_ROOT.includes('\\') ? '\\' : '/';
-    videoDir = _photoTree.selectedRel
-      ? VIDEOS_ROOT.replace(/[/\\]+$/, '') + sep + _photoTree.selectedRel.replace(/\//g, sep)
+    videoRel = photoRel;
+    videoDir = videoRel
+      ? VIDEOS_ROOT.replace(/[/\\]+$/, '') + sep + videoRel.replace(/\//g, sep)
       : VIDEOS_ROOT.replace(/[/\\]+$/, '');
   } else {
     if (_videoTree.selectedRel === null) {
       alert('Please select a video destination folder.'); return;
     }
     videoDir = _videoTree.selectedPath;
+    videoRel = _videoTree.selectedRel || '';
   }
 
   if (document.querySelector(`#dest-zones .dest-zone[data-photo-dir="${CSS.escape(photoDir)}"]`)) {
     alert(`\u201c${photoLabel}\u201d is already in your destinations.`); return;
   }
 
-  addDestZone(photoDir, videoDir, photoLabel);
+  addDestZone(photoDir, videoDir, photoLabel, photoRel, videoRel);
   _photoTree.reset();
   if (!mirror) _videoTree.reset();
 }
@@ -845,6 +854,8 @@ function saveZones() {
   const zones = Array.from(document.querySelectorAll('#dest-zones .dest-zone')).map(z => ({
     photoDir: z.dataset.photoDir,
     videoDir: z.dataset.videoDir,
+    photoRel: z.dataset.photoRel || '',
+    videoRel: z.dataset.videoRel || '',
     label: z.querySelector('.dest-zone-header span').textContent,
   }));
   try { localStorage.setItem(_LS_KEY, JSON.stringify(zones)); } catch {}
@@ -854,7 +865,8 @@ function loadSavedZones() {
     const zones = JSON.parse(localStorage.getItem(_LS_KEY) || 'null');
     if (!zones?.length) return;
     for (const z of zones) {
-      if (z.photoDir && z.label) addDestZone(z.photoDir, z.videoDir || z.photoDir, z.label);
+      if (z.photoDir && z.label)
+        addDestZone(z.photoDir, z.videoDir || z.photoDir, z.label, z.photoRel || '', z.videoRel || '');
     }
   } catch {}
 }
@@ -940,16 +952,19 @@ function handleDrop(zone, e) {
   const destLabel = zone.querySelector('.dest-zone-header span').textContent;
 
   for (const srcPath of srcs) {
-    // Remove from previous zone count
+    // Determine media type to track photo/video pending counts separately
+    const card     = cardBySrc(srcPath);
+    const isVideo  = card?.dataset.media === 'video';
+    const countKey = isVideo ? 'pendingVideos' : 'pendingPhotos';
+
+    // Remove from previous zone
     const prev = assignments.get(srcPath);
     if (prev?.zoneEl) {
-      prev.zoneEl.dataset.count = Math.max(0, parseInt(prev.zoneEl.dataset.count || '0') - 1);
+      prev.zoneEl.dataset[countKey] = Math.max(0, parseInt(prev.zoneEl.dataset[countKey] || '0') - 1);
       updateZoneCount(prev.zoneEl);
     }
 
     // Pick dest dir based on media type (photos vs videos)
-    const card    = cardBySrc(srcPath);
-    const isVideo = card?.dataset.media === 'video';
     const destDir = isVideo ? (zone.dataset.videoDir || zone.dataset.photoDir) : zone.dataset.photoDir;
 
     assignments.set(srcPath, { destDir, destLabel, zoneEl: zone });
@@ -957,17 +972,19 @@ function handleDrop(zone, e) {
       card.classList.add('assigned');
       card.querySelector('.dest-badge').textContent = destLabel;
     }
-    zone.dataset.count = parseInt(zone.dataset.count || '0') + 1;
+    zone.dataset[countKey] = parseInt(zone.dataset[countKey] || '0') + 1;
   }
   updateZoneCount(zone);
   updateCounts();
 }
 
 function unassign(card) {
-  const srcPath = card.dataset.src;
-  const prev    = assignments.get(srcPath);
+  const srcPath  = card.dataset.src;
+  const isVideo  = card.dataset.media === 'video';
+  const countKey = isVideo ? 'pendingVideos' : 'pendingPhotos';
+  const prev     = assignments.get(srcPath);
   if (prev?.zoneEl) {
-    prev.zoneEl.dataset.count = Math.max(0, parseInt(prev.zoneEl.dataset.count || '0') - 1);
+    prev.zoneEl.dataset[countKey] = Math.max(0, parseInt(prev.zoneEl.dataset[countKey] || '0') - 1);
     updateZoneCount(prev.zoneEl);
   }
   assignments.delete(srcPath);
@@ -979,7 +996,33 @@ function unassign(card) {
 }
 
 function updateZoneCount(zone) {
-  zone.querySelector('.dest-count').textContent = zone.dataset.count || '0';
+  const el      = zone.querySelector('.dest-count');
+  const loading = zone.dataset.existingPhotos === '' || zone.dataset.existingVideos === '';
+  if (loading) { el.textContent = '…'; return; }
+  const ep   = parseInt(zone.dataset.existingPhotos);
+  const ev   = parseInt(zone.dataset.existingVideos);
+  const pp   = parseInt(zone.dataset.pendingPhotos || '0');
+  const pv   = parseInt(zone.dataset.pendingVideos || '0');
+  const pStr = pp ? `${ep}+${pp}` : String(ep);
+  const vStr = pv ? `${ev}+${pv}` : String(ev);
+  el.textContent = `📸 ${pStr}  🏂 ${vStr}`;
+}
+
+async function fetchZoneExistingCounts(zone) {
+  const photoRel = zone.dataset.photoRel || '';
+  const videoRel = zone.dataset.videoRel || '';
+  try {
+    const [pr, vr] = await Promise.all([
+      fetch(`/api/destinations/folder-count?root=photos&path=${encodeURIComponent(photoRel)}`),
+      fetch(`/api/destinations/folder-count?root=videos&path=${encodeURIComponent(videoRel)}`),
+    ]);
+    zone.dataset.existingPhotos = pr.ok ? String((await pr.json()).count) : '0';
+    zone.dataset.existingVideos = vr.ok ? String((await vr.json()).count) : '0';
+  } catch {
+    zone.dataset.existingPhotos = '0';
+    zone.dataset.existingVideos = '0';
+  }
+  updateZoneCount(zone);
 }
 
 function updateCounts() {
@@ -1083,8 +1126,12 @@ async function deleteSelected() {
       // Clean up assignment if present
       const prev = assignments.get(r.path);
       if (prev) {
-        const z = document.querySelector(`.dest-zone[data-dest-dir="${CSS.escape(prev.destDir)}"]`);
-        if (z) { z.dataset.count = Math.max(0, parseInt(z.dataset.count || '0') - 1); refreshZoneCount(prev.destDir); }
+        if (prev.zoneEl) {
+          const isVideo  = card.dataset.media === 'video';
+          const countKey = isVideo ? 'pendingVideos' : 'pendingPhotos';
+          prev.zoneEl.dataset[countKey] = Math.max(0, parseInt(prev.zoneEl.dataset[countKey] || '0') - 1);
+          updateZoneCount(prev.zoneEl);
+        }
         assignments.delete(r.path);
       }
       selected.delete(r.path);

@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from app.destinations import (
+    count_files_at,
     create_event_folder,
     ensure_child_folder,
     ensure_folder_path,
@@ -128,6 +129,24 @@ async def get_folder_children(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"children": children}
+
+
+@router.get("/folder-count")
+async def get_folder_count(
+    root: Literal["photos", "videos"],
+    path: str = "",
+) -> dict:
+    """Return the count of existing files at ``<library_root>/<path>``.
+
+    Used by the review UI to display how many files already live in a
+    destination zone.  An empty *path* means the library root itself.
+    """
+    media_type = "photo" if root == "photos" else "video"
+    try:
+        count = count_files_at(media_type, path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"count": count}
 
 
 class EnsureFolderRequest(BaseModel):
