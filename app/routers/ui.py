@@ -11,7 +11,6 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from app.config import get_config
-from app.destinations import resolve_quarterly_path
 from app.scanner import get_last_scan_result, get_scan_progress
 
 router = APIRouter(tags=["ui"])
@@ -51,9 +50,6 @@ async def review(request: Request) -> HTMLResponse:
                                 "media_type": f.media_type,
                                 "capture_date": f.capture_date.isoformat(),
                                 "size_bytes": f.size_bytes,
-                                "quarterly_dest": str(
-                                    resolve_quarterly_path(f.media_type, f.capture_date)
-                                ),
                                 "gps": list(f.gps) if f.gps else None,
                             }
                             for f in dg.files

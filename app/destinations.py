@@ -124,6 +124,47 @@ def resolve_event_path(media_type: MediaType, category: str, name: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Direct child-folder helpers (for the manual destination picker)
+# ---------------------------------------------------------------------------
+
+
+def list_child_folders(media_type: MediaType) -> list[str]:
+    """Return names of all first-level subdirectories under the library root.
+
+    Synology internal directories and hidden dirs are excluded.
+    """
+    root = _library_root(media_type)
+    if not root.exists():
+        return []
+    try:
+        return sorted(
+            d.name
+            for d in root.iterdir()
+            if d.is_dir() and not d.name.startswith(".") and d.name not in _SYNOLOGY_SKIP
+        )
+    except OSError as exc:
+        logger.warning("Could not list child folders in %s: %s", root, exc)
+        return []
+
+
+def ensure_child_folder(media_type: MediaType, name: str) -> Path:
+    """Create and return ``<library_root>/<name>``.
+
+    Raises ``ValueError`` if *name* contains path separators (prevents path
+    traversal) or if the resolved path escapes the library root.
+    """
+    if not name or any(c in name for c in ("/", "\\", "..")):
+        raise ValueError(f"Invalid folder name: {name!r}")
+    root = _library_root(media_type)
+    target = (root / name).resolve()
+    if not str(target).startswith(str(root.resolve())):
+        raise ValueError(f"Resolved path {target} is outside the library root {root}")
+    target.mkdir(parents=True, exist_ok=True)
+    logger.info("Ensured destination folder: %s", target)
+    return target
+
+
+# ---------------------------------------------------------------------------
 # Unified destination resolver
 # ---------------------------------------------------------------------------
 

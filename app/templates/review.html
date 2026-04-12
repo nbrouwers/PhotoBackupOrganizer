@@ -139,6 +139,13 @@
   }
   .new-zone-row { display: flex; gap: .4rem; margin-top: .4rem; }
   .new-zone-row input { flex: 1; min-width: 0; }
+  .dest-remove {
+    background: none; border: none;
+    color: var(--clr-text-3); font-size: 1.1rem; line-height: 1;
+    cursor: pointer; padding: 0 .15rem;
+    transition: color .12s;
+  }
+  .dest-remove:hover { color: var(--clr-danger); }
   /* ── Top bar ── */
   #top-bar {
     display: flex;
@@ -279,7 +286,6 @@ const VIDEOS_ROOT = {{ videos_root | tojson }};
                  data-src="{{ f.path }}"
                  data-media="{{ f.media_type }}"
                  data-date="{{ f.capture_date }}"
-                 data-quarterly="{{ f.quarterly_dest }}"
                  data-device="{{ device.label }}"
                  {% if f.gps %}data-gps="{{ f.gps[0] }},{{ f.gps[1] }}"{% endif %}>
               <div class="thumb-wrap">
@@ -303,18 +309,39 @@ const VIDEOS_ROOT = {{ videos_root | tojson }};
   <!-- RIGHT: sticky destination panel -->
   <div id="dest-panel">
     <div class="card" style="padding:1rem;">
-      <h2 style="margin-bottom:.4rem;"><span class="h2-icon">⇒</span> Destinations</h2>
+      <h2 style="margin-bottom:.6rem;"><span class="h2-icon">⇒</span> Destinations</h2>
 
-      <div class="dest-section-title">Quarterly (auto)</div>
-      <div id="quarterly-zones"></div>
+      <!-- Added destination zones -->
+      <div id="dest-zones">
+        <em id="dest-empty" style="font-size:.75rem;color:#adb5bd;">No destinations yet. Add one below.</em>
+      </div>
 
-      <div class="dest-section-title">Event folders</div>
-      <div id="event-zones"><em style="font-size:.75rem;color:#adb5bd;">Loading…</em></div>
-
-      <div class="dest-section-title">Add custom folder</div>
-      <div class="new-zone-row">
-        <input type="text" id="new-zone-name" placeholder="Folder name…" />
-        <button class="btn btn-secondary btn-sm" onclick="addCustomZone()">+ Add</button>
+      <div class="dest-section-title" style="margin-top:.85rem;">Add destination</div>
+      <div id="add-dest-form">
+        <!-- Photo folder -->
+        <label style="font-size:.78rem;color:var(--clr-text-3);display:block;margin-bottom:.18rem;">Photo folder</label>
+        <select id="photo-folder-select" onchange="onPhotoFolderChange()"
+                style="width:100%;font-size:.8rem;padding:.25rem .45rem;border-radius:5px;border:1px solid var(--clr-border);background:var(--clr-surface);color:var(--clr-text);margin-bottom:.3rem;">
+          <option value="">Loading…</option>
+        </select>
+        <input type="text" id="photo-folder-new" placeholder="New folder name…"
+               style="display:none;width:100%;margin-bottom:.3rem;" />
+        <!-- Mirror toggle -->
+        <label style="font-size:.8rem;display:flex;align-items:center;gap:.4rem;margin-bottom:.45rem;cursor:pointer;">
+          <input type="checkbox" id="mirror-videos" checked onchange="onMirrorChange()" />
+          Same folder in videos library
+        </label>
+        <!-- Video folder (hidden unless mirror unchecked) -->
+        <div id="video-folder-row" style="display:none;margin-bottom:.45rem;">
+          <label style="font-size:.78rem;color:var(--clr-text-3);display:block;margin-bottom:.18rem;">Video folder</label>
+          <select id="video-folder-select" onchange="onVideoFolderChange()"
+                  style="width:100%;font-size:.8rem;padding:.25rem .45rem;border-radius:5px;border:1px solid var(--clr-border);background:var(--clr-surface);color:var(--clr-text);margin-bottom:.3rem;">
+            <option value="">── select a folder ──</option>
+          </select>
+          <input type="text" id="video-folder-new" placeholder="New folder name…"
+                 style="display:none;width:100%;" />
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="addDestination()" style="width:100%;">+ Add destination</button>
       </div>
     </div>
   </div>
@@ -537,95 +564,178 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// ── Build quarterly zones from embedded scan data ────────────────────────────
-function buildQuarterlyZones() {
-  const seen  = new Set();
-  const zones = [];
-  for (const device of SCAN_DATA) {
-    for (const dg of device.date_groups) {
-      for (const f of dg.files) {
-        if (!seen.has(f.quarterly_dest)) {
-          seen.add(f.quarterly_dest);
-          zones.push({ dir: f.quarterly_dest, label: quartLabel(f.quarterly_dest) });
-        }
-      }
-    }
-  }
-  zones.sort((a, b) => a.label.localeCompare(b.label));
-  const container = document.getElementById('quarterly-zones');
-  for (const z of zones) addDestZone(container, z.dir, z.label);
-}
-
-function quartLabel(p) {
-  const parts = p.replace(/\\/g, '/').split('/').filter(Boolean);
-  return parts.length >= 2 ? parts.slice(-2).join('/') : p;
-}
-
-// ── Load event zones from API ────────────────────────────────────────────────
-async function loadEventZones() {
-  const container = document.getElementById('event-zones');
-  try {
-    const resp = await fetch('/api/destinations/all-event-zones');
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    container.innerHTML = '';
-    if (!data.zones || !data.zones.length) {
-      container.innerHTML = '<em style="font-size:.75rem;color:#adb5bd;">No event folders found.</em>';
-      return;
-    }
-    for (const z of data.zones) addDestZone(container, z.dir, z.label);
-  } catch (err) {
-    console.error('loadEventZones failed:', err);
-    container.innerHTML = '<em style="font-size:.75rem;color:#e03131;">Failed to load event folders.</em>';
-  }
-}
-
-// ── Custom zone ───────────────────────────────────────────────────────────────
-function addCustomZone() {
-  const input = document.getElementById('new-zone-name');
-  const name  = input.value.trim();
-  if (!name) return;
-  const sep = PHOTOS_ROOT.includes('\\') ? '\\' : '/';
-  const dir = PHOTOS_ROOT + sep + name;
-  addDestZone(document.getElementById('event-zones'), dir, '📁 ' + name);
-  input.value = '';
-}
-
 // ── Zone DOM helper ───────────────────────────────────────────────────────────
-function addDestZone(container, dir, label) {
+function addDestZone(photoDir, videoDir, label) {
+  const container = document.getElementById('dest-zones');
+  const empty     = document.getElementById('dest-empty');
+  if (empty) empty.style.display = 'none';
+
   const zone = document.createElement('div');
-  zone.className     = 'dest-zone';
-  zone.dataset.destDir = dir;
+  zone.className        = 'dest-zone';
+  zone.dataset.photoDir = photoDir;
+  zone.dataset.videoDir = videoDir || photoDir;
+  zone.dataset.count    = '0';
+  const titleAttr = 'Photo: ' + photoDir + (videoDir && videoDir !== photoDir ? '\nVideo: ' + videoDir : '');
   zone.innerHTML = `
     <div class="dest-zone-header">
-      <span title="${escHtml(dir)}">${escHtml(label)}</span>
-      <span class="dest-count">0</span>
+      <span title="${escHtml(titleAttr)}">${escHtml(label)}</span>
+      <div style="display:flex;align-items:center;gap:.4rem;">
+        <span class="dest-count">0</span>
+        <button class="dest-remove" onclick="removeDestZone(this)" title="Remove destination">&times;</button>
+      </div>
     </div>`;
   zone.addEventListener('dragover',  e  => { e.preventDefault(); zone.classList.add('drag-over'); });
   zone.addEventListener('dragleave', ()  => zone.classList.remove('drag-over'));
   zone.addEventListener('drop',      e  => { e.preventDefault(); zone.classList.remove('drag-over'); handleDrop(zone, e); });
   container.appendChild(zone);
+  saveZones();
 }
-// ── Quarterly auto-assignment ─────────────────────────────────────────────────
-// Pre-assigns every card to its quarterly destination when the page loads.
-// Files can still be manually re-assigned or unassigned afterwards.
-function autoAssignQuarterly() {
-  for (const card of allCards()) {
-    const quarterly = card.dataset.quarterly;
-    if (!quarterly || assignments.has(card.dataset.src)) continue;
-    const zone = document.querySelector(`.dest-zone[data-dest-dir="${CSS.escape(quarterly)}"]`);
-    if (!zone) continue;
-    const srcPath   = card.dataset.src;
-    const destLabel = zone.querySelector('.dest-zone-header span').textContent;
-    assignments.set(srcPath, { destDir: quarterly, destLabel });
-    card.classList.add('assigned');
-    card.querySelector('.dest-badge').textContent = destLabel;
-    zone.dataset.count = parseInt(zone.dataset.count || '0') + 1;
+
+function removeDestZone(btn) {
+  const zone = btn.closest('.dest-zone');
+  if (!zone) return;
+  // Unassign files in this zone without touching files on disk
+  for (const [srcPath, asgn] of [...assignments]) {
+    if (asgn.zoneEl === zone) {
+      assignments.delete(srcPath);
+      selected.delete(srcPath);
+      const card = cardBySrc(srcPath);
+      if (card) {
+        card.classList.remove('assigned', 'selected');
+        card.querySelector('.dest-badge').textContent = '';
+      }
+    }
   }
-  document.querySelectorAll('.dest-zone').forEach(z => {
-    z.querySelector('.dest-count').textContent = z.dataset.count || '0';
-  });
+  zone.remove();
+  if (!document.querySelectorAll('#dest-zones .dest-zone').length) {
+    const empty = document.getElementById('dest-empty');
+    if (empty) empty.style.display = '';
+  }
+  saveZones();
+  syncDeleteBtn();
   updateCounts();
+}
+
+// ── Destination picker ────────────────────────────────────────────────────────
+async function loadFolderOptions(apiRoot, selectEl) {
+  selectEl.innerHTML = '<option value="">Loading\u2026</option>';
+  try {
+    const resp = await fetch(`/api/destinations/child-folders?root=${apiRoot}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const { folders } = await resp.json();
+    selectEl.innerHTML =
+      '<option value="">\u2500\u2500 select a folder \u2500\u2500</option>'
+      + '<option value="__new__">\uff0b Create new folder\u2026</option>'
+      + folders.map(f => `<option value="${escHtml(f)}">${escHtml(f)}</option>`).join('');
+  } catch (err) {
+    selectEl.innerHTML = '<option value="">Failed to load</option>';
+    console.error('loadFolderOptions failed:', err);
+  }
+}
+
+function onPhotoFolderChange() {
+  const v   = document.getElementById('photo-folder-select').value;
+  const inp = document.getElementById('photo-folder-new');
+  inp.style.display = v === '__new__' ? '' : 'none';
+  if (v === '__new__') inp.focus();
+}
+
+function onVideoFolderChange() {
+  const v   = document.getElementById('video-folder-select').value;
+  const inp = document.getElementById('video-folder-new');
+  inp.style.display = v === '__new__' ? '' : 'none';
+  if (v === '__new__') inp.focus();
+}
+
+function onMirrorChange() {
+  const mirror = document.getElementById('mirror-videos');
+  const row    = document.getElementById('video-folder-row');
+  row.style.display = mirror.checked ? 'none' : '';
+  if (!mirror.checked) {
+    const sel = document.getElementById('video-folder-select');
+    // Lazy-load video folders the first time the row is revealed
+    if (sel.options.length <= 1 && (!sel.options[0] || sel.options[0].value === '')) {
+      loadFolderOptions('videos', sel);
+    }
+  }
+}
+
+async function addDestination() {
+  const photoSel = document.getElementById('photo-folder-select');
+  const photoNew = document.getElementById('photo-folder-new');
+  const mirror   = document.getElementById('mirror-videos').checked;
+  const videoSel = document.getElementById('video-folder-select');
+  const videoNew = document.getElementById('video-folder-new');
+
+  const photoName = photoSel.value === '__new__' ? photoNew.value.trim() : photoSel.value;
+  if (!photoName) { alert('Please select or enter a photo folder name.'); return; }
+
+  let videoName = photoName;
+  if (!mirror) {
+    videoName = videoSel.value === '__new__' ? videoNew.value.trim() : videoSel.value;
+    if (!videoName) { alert('Please select or enter a video folder name.'); return; }
+  }
+
+  if (photoSel.value === '__new__') {
+    if (!await ensureFolder('photos', photoName)) return;
+    loadFolderOptions('photos', photoSel);
+    photoNew.value = ''; photoNew.style.display = 'none';
+  }
+  if (!mirror && videoSel.value === '__new__') {
+    if (!await ensureFolder('videos', videoName)) return;
+    loadFolderOptions('videos', videoSel);
+    videoNew.value = ''; videoNew.style.display = 'none';
+  }
+
+  const sep      = PHOTOS_ROOT.includes('\\') ? '\\' : '/';
+  const photoDir = PHOTOS_ROOT.replace(/[/\\]+$/, '') + sep + photoName;
+  const videoDir = VIDEOS_ROOT.replace(/[/\\]+$/, '') + sep + videoName;
+
+  if (document.querySelector(`#dest-zones .dest-zone[data-photo-dir="${CSS.escape(photoDir)}"]`)) {
+    alert(`\u201c${photoName}\u201d is already in your destinations.`); return;
+  }
+
+  addDestZone(photoDir, videoDir, photoName);
+  photoSel.value = '';
+}
+
+async function ensureFolder(root, name) {
+  try {
+    const resp = await fetch('/api/destinations/ensure-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ root, name }),
+    });
+    if (!resp.ok) {
+      const d = await resp.json().catch(() => ({}));
+      alert('Could not create folder: ' + (d.detail || resp.status));
+      return false;
+    }
+    return true;
+  } catch (err) {
+    alert('Failed to create folder. See console for details.');
+    console.error(err); return false;
+  }
+}
+
+// ── Persist destinations across page loads (localStorage) ─────────────────────
+const _LS_KEY = 'pbo_destinations_v1';
+function saveZones() {
+  const zones = Array.from(document.querySelectorAll('#dest-zones .dest-zone')).map(z => ({
+    photoDir: z.dataset.photoDir,
+    videoDir: z.dataset.videoDir,
+    label: z.querySelector('.dest-zone-header span').textContent,
+  }));
+  try { localStorage.setItem(_LS_KEY, JSON.stringify(zones)); } catch {}
+}
+function loadSavedZones() {
+  try {
+    const zones = JSON.parse(localStorage.getItem(_LS_KEY) || 'null');
+    if (!zones?.length) return;
+    for (const z of zones) {
+      if (z.photoDir && z.label) addDestZone(z.photoDir, z.videoDir || z.photoDir, z.label);
+    }
+  } catch {}
 }
 
 // ── GPS lazy location loading ──────────────────────────────────────────────────
@@ -696,9 +806,8 @@ document.addEventListener('DOMContentLoaded', () => {
       _dragSrcs = [];
     });
   });
-  buildQuarterlyZones();
-  autoAssignQuarterly();
-  loadEventZones();
+  loadFolderOptions('photos', document.getElementById('photo-folder-select'));
+  loadSavedZones();
   loadGPSLocations();
   updateCounts();
 });
@@ -706,43 +815,38 @@ document.addEventListener('DOMContentLoaded', () => {
 function handleDrop(zone, e) {
   const srcs = _dragSrcs.length ? _dragSrcs : [e.dataTransfer.getData('text/plain')];
   if (!srcs.length || !srcs[0]) return;
-  const destDir   = zone.dataset.destDir;
   const destLabel = zone.querySelector('.dest-zone-header span').textContent;
 
-  const prevDirsToRefresh = new Set();
-
   for (const srcPath of srcs) {
-    // Remove from previous zone if re-assigning
+    // Remove from previous zone count
     const prev = assignments.get(srcPath);
-    if (prev) {
-      prevDirsToRefresh.add(prev.destDir);
-      const prevZone = document.querySelector(`.dest-zone[data-dest-dir="${CSS.escape(prev.destDir)}"]`);
-      if (prevZone) prevZone.dataset.count = Math.max(0, parseInt(prevZone.dataset.count || '0') - 1);
+    if (prev?.zoneEl) {
+      prev.zoneEl.dataset.count = Math.max(0, parseInt(prev.zoneEl.dataset.count || '0') - 1);
+      updateZoneCount(prev.zoneEl);
     }
 
-    assignments.set(srcPath, { destDir, destLabel });
+    // Pick dest dir based on media type (photos vs videos)
+    const card    = cardBySrc(srcPath);
+    const isVideo = card?.dataset.media === 'video';
+    const destDir = isVideo ? (zone.dataset.videoDir || zone.dataset.photoDir) : zone.dataset.photoDir;
 
-    // Update card badge
-    const card = cardBySrc(srcPath);
+    assignments.set(srcPath, { destDir, destLabel, zoneEl: zone });
     if (card) {
       card.classList.add('assigned');
       card.querySelector('.dest-badge').textContent = destLabel;
     }
     zone.dataset.count = parseInt(zone.dataset.count || '0') + 1;
   }
-
-  prevDirsToRefresh.forEach(d => refreshZoneCount(d));
-  refreshZoneCount(destDir);
+  updateZoneCount(zone);
   updateCounts();
 }
 
 function unassign(card) {
   const srcPath = card.dataset.src;
   const prev    = assignments.get(srcPath);
-  if (prev) {
-    const prevZone = document.querySelector(`.dest-zone[data-dest-dir="${CSS.escape(prev.destDir)}"]`);
-    if (prevZone) prevZone.dataset.count = Math.max(0, parseInt(prevZone.dataset.count || '0') - 1);
-    refreshZoneCount(prev.destDir);
+  if (prev?.zoneEl) {
+    prev.zoneEl.dataset.count = Math.max(0, parseInt(prev.zoneEl.dataset.count || '0') - 1);
+    updateZoneCount(prev.zoneEl);
   }
   assignments.delete(srcPath);
   card.classList.remove('assigned');
@@ -752,9 +856,8 @@ function unassign(card) {
   updateCounts();
 }
 
-function refreshZoneCount(destDir) {
-  const zone = document.querySelector(`.dest-zone[data-dest-dir="${CSS.escape(destDir)}"]`);
-  if (zone) zone.querySelector('.dest-count').textContent = zone.dataset.count || '0';
+function updateZoneCount(zone) {
+  zone.querySelector('.dest-count').textContent = zone.dataset.count || '0';
 }
 
 function updateCounts() {

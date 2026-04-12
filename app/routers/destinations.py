@@ -11,6 +11,8 @@ from pydantic import BaseModel
 
 from app.destinations import (
     create_event_folder,
+    ensure_child_folder,
+    list_child_folders,
     list_event_categories,
     list_event_folders,
     resolve_quarterly_path,
@@ -95,6 +97,37 @@ async def get_all_event_zones() -> dict:
     for cat in list_event_categories("video"):
         zones.append({"dir": str(videos_root / cat), "label": f"🎬 {cat}"})
     return {"zones": zones}
+
+
+# ---------------------------------------------------------------------------
+# Manual destination folder picker
+# ---------------------------------------------------------------------------
+
+
+@router.get("/child-folders")
+async def get_child_folders(root: Literal["photos", "videos"]) -> dict:
+    """List first-level subdirectories under the photos or videos library root."""
+    media_type = "photo" if root == "photos" else "video"
+    return {"folders": list_child_folders(media_type)}
+
+
+class EnsureFolderRequest(BaseModel):
+    root: Literal["photos", "videos"]
+    name: str
+
+
+@router.post("/ensure-folder")
+async def ensure_folder(req: EnsureFolderRequest) -> dict:
+    """Create ``<library_root>/<name>`` if it does not yet exist.
+
+    The name must be a simple folder name (no path separators).
+    """
+    media_type = "photo" if req.root == "photos" else "video"
+    try:
+        path = ensure_child_folder(media_type, req.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"path": str(path), "created": True}
 
 
 # ---------------------------------------------------------------------------
