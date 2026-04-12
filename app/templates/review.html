@@ -796,7 +796,7 @@ async function addDestination() {
     alert('Please select a photo destination folder.'); return;
   }
   const photoDir   = _photoTree.selectedPath;
-  const photoLabel = _photoTree.selectedLabel;
+  const photoLabel = _photoTree.selectedRel || _photoTree.selectedLabel;
 
   let videoDir;
   if (mirror) {
