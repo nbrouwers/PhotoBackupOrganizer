@@ -722,7 +722,7 @@ class FolderPicker {
     if (pn?.children !== null && !pn.children.includes(name)) {
       pn.children.push(name); pn.children.sort();
     }
-    if (!this._nodes.has(relPath)) this._nodes.set(relPath, { children: [], expanded: false, loading: false });
+    if (!this._nodes.has(relPath)) this._nodes.set(relPath, { children: [], expanded: true, loading: false });
     this._select(relPath);
   }
 
@@ -747,7 +747,6 @@ class FolderPicker {
       const cn       = this._nodes.get(childRel);
       const isSel    = (this.selRel === childRel);
       const isExp    = cn?.expanded ?? false;
-      const isLeaf   = cn?.children !== null && cn.children.length === 0;
 
       const row = document.createElement('div');
       row.className = 'tree-item' + (isSel ? ' selected' : '');
@@ -756,13 +755,11 @@ class FolderPicker {
 
       const tog = document.createElement('span');
       tog.className = 'tree-toggle';
-      if (!isLeaf) {
-        tog.textContent = isExp ? '\u25be' : '\u25b8';
-        tog.addEventListener('click', e => {
-          e.stopPropagation();
-          isExp ? this._collapse(childRel) : this._expand(childRel);
-        });
-      }
+      tog.textContent = isExp ? '\u25be' : '\u25b8';
+      tog.addEventListener('click', e => {
+        e.stopPropagation();
+        isExp ? this._collapse(childRel) : this._expand(childRel);
+      });
       row.appendChild(tog);
 
       const nm = document.createElement('span');
