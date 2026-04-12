@@ -6,10 +6,11 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from app.config import get_config
-from app.mover import MoveAssignment, dry_run_batch, execute_batch
+from app.mover import MoveAssignment, dry_run_batch, execute_batch, write_log_entry
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/move", tags=["move"])
@@ -127,10 +128,12 @@ async def delete_files(req: DeleteRequest) -> dict:
         try:
             p.unlink()
             logger.info("Deleted: %s", p)
+            write_log_entry("delete", src=str(p))
             results.append({"path": raw_path, "status": "deleted"})
         except FileNotFoundError:
             results.append({"path": raw_path, "status": "not_found"})
         except OSError as exc:
+            write_log_entry("delete_error", src=str(p), error=str(exc))
             results.append({"path": raw_path, "status": "error", "message": str(exc)})
 
     deleted = sum(1 for r in results if r["status"] == "deleted")
@@ -146,7 +149,8 @@ async def delete_files(req: DeleteRequest) -> dict:
 async def get_log(lines: int = 200) -> dict:
     """Return the most recent *lines* entries from the persistent audit log."""
     import os
-    log_path = Path(os.environ.get("PHOTO_BACKUP_LOG_DIR", "/logs")) / "photo-backup-organizer.log"
+    from app.mover import _audit_log_path
+    log_path = _audit_log_path()
 
     if not log_path.exists():
         return {"entries": []}
@@ -167,5 +171,45 @@ async def get_log(lines: int = 200) -> dict:
                 "note": parts[4] if len(parts) > 4 else "",
                 "error": parts[5] if len(parts) > 5 else "",
             })
+    return {"entries": entries}
+
+
+@router.get("/log/rows", response_class=HTMLResponse)
+async def get_log_rows(lines: int = 200) -> str:
+    """Return audit log entries as HTML <tr> rows for HTMX injection."""
+    from fastapi.responses import HTMLResponse as _HR
+    data = await get_log(lines)
+    entries = data["entries"]
+    if not entries:
+        return _HR('<tr><td colspan="5" style="text-align:center;color:var(--clr-text-3);padding:1.5rem;">No log entries yet.</td></tr>')
+
+    _ACTION_BADGE = {
+        "move":           "badge-move",
+        "rename":         "badge-rename",
+        "skip_duplicate": "badge-skip",
+        "delete":         "badge-error",
+        "delete_error":   "badge-error",
+        "scan_start":     "badge-skip",
+        "scan_complete":  "badge-move",
+        "scan_error":     "badge-error",
+    }
+
+    def _esc(s: str) -> str:
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    rows = []
+    for e in reversed(entries):   # newest first
+        badge = _ACTION_BADGE.get(e["action"], "badge-error")
+        note_or_error = e["error"] or e["note"]
+        rows.append(
+            f'<tr>'
+            f'<td style="white-space:nowrap;font-size:.8rem;">{_esc(e["timestamp"])}</td>'
+            f'<td><span class="badge {badge}">{_esc(e["action"])}</span></td>'
+            f'<td style="font-size:.8rem;word-break:break-all;">{_esc(e["src"])}</td>'
+            f'<td style="font-size:.8rem;word-break:break-all;">{_esc(e["dest"])}</td>'
+            f'<td style="font-size:.8rem;">{_esc(note_or_error)}</td>'
+            f'</tr>'
+        )
+    return _HR("\n".join(rows))
 
     return {"entries": entries}

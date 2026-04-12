@@ -1,6 +1,6 @@
 # Photo Backup Organizer
 
-A Python web application that runs in a Docker container on a Synology NAS. It streamlines the process of moving photos and videos from per-device automatic backup folders into a curated, centrally organised library — separated by media type, and filed into either per-event folders or quarterly catch-all folders.
+A Python web application that runs in a Docker container on a Synology NAS. It streamlines the process of moving photos and videos from per-device automatic backup folders into a curated, centrally organised library — separated by media type and filed into destination folders that you define.
 
 ---
 
@@ -28,12 +28,14 @@ A Python web application that runs in a Docker container on a Synology NAS. It s
 - **Automatic skip of processed files** — an SQLite database records every moved file so it is never re-presented on a subsequent scan.
 
 ### Review
-- **Drag-and-drop assignment** — drag one or more file cards onto a destination zone. Multi-select with Shift+Click or Ctrl+Click before dragging.
-- **Quarterly auto-assignment** — when the review page loads, every file is automatically pre-assigned to its quarterly destination (`<year>/Q<quarter>`). Re-drag to an event folder to override.
+- **Manual destination management** — add destinations by picking an existing folder from the photos library dropdown, or type a new folder name to create it on the fly. By default the same folder name is mirrored as the video destination; uncheck "Same folder in videos library" to set an independent video path. Destinations persist across page reloads via `localStorage`. Any destination can be removed (assigned cards are unassigned; files on disk are untouched).
+- **Source filter** — filter the grid to show only files from a specific device via the dropdown in the top bar.
+- **Sort** — sort visible cards by date ascending, date descending, or location A–Z.
+- **Drag-and-drop assignment** — drag one or more file cards onto a destination zone. Multi-select with Shift+Click or Ctrl+Click before dragging. Photos route to the photos library path; videos route to the videos library path automatically.
+- **Delete selected** — select one or more cards and click 🗑 Delete to permanently remove the source files from the backup folder. A confirmation dialog is shown before any file is deleted.
 - **Video play icon** — video thumbnails are decorated with a `▶` overlay badge so they are instantly distinguishable from photos.
 - **GPS location labels** — if a photo's EXIF data contains GPS coordinates, the card shows a `⊙ City, Country` label (e.g. `⊙ Amsterdam, Netherlands`). Locations are reverse-geocoded via OpenStreetMap Nominatim, cached permanently in SQLite, and appear in the full-screen lightbox caption.
-- **Full-screen lightbox** — double-click any card to preview the full-resolution photo or play the video inline.
-- **Custom event destinations** — type a folder name and click "+ Add" to create a new destination zone on the fly.
+- **Full-screen lightbox** — double-click any card to preview the full-resolution photo or play the video inline. Use ‹ / › arrow buttons or ← / → keyboard keys to navigate between visible cards without closing the lightbox.
 - **Tile-size slider** — resize the grid from 2 to 10 columns.
 
 ### Move
@@ -59,9 +61,9 @@ Android phone  ──►  Synology backup folder  ──►  Photo Backup Organi
 
 1. Your phone's backup app (e.g. Synology Photos, FolderSync) continuously syncs new media to a dedicated per-device folder on the NAS.
 2. You open the Photo Backup Organizer web UI and press **Scan** to discover all unprocessed files.
-3. Files are grouped by device and capture date. You assign each group (or individual file) to a destination:
-   - An **event folder** (e.g. `/photos/holidays/2026 Amsterdam/`)
-   - The automatic **quarterly folder** (e.g. `/photos/2026/Q1/`)
+3. Files are grouped by device and capture date. Add one or more destination folders in the right-hand panel, then drag cards onto them to assign:
+   - A folder you pick from the photos/videos library (e.g. `/photos/2026 Amsterdam/`)
+   - A brand-new folder you name inline (created on the server immediately)
 4. Press **Preview changes (dry-run)** to see exactly what will happen — no files are moved yet.
 5. Review the dry-run table and press **Confirm & Move** to execute. Files are copied to the destination, then deleted from the source only after a successful write.
 6. Already-processed files are remembered in an SQLite database and never re-presented to you.
@@ -79,14 +81,14 @@ photo-backup-organizer/
 │   ├── scanner.py         # Backup folder scanner with two-phase progress
 │   ├── metadata.py        # EXIF / ffprobe capture-date and GPS extraction
 │   ├── geocoder.py        # Reverse geocoding via Nominatim (OpenStreetMap)
-│   ├── thumbnails.py      # Pillow photo thumbnails + ffmpeg video posters
-│   ├── destinations.py    # Library path resolution (quarterly / event)
+│   ├── thumbnails.py      # ffmpeg-only thumbnails (photo + video poster + H.264 preview)
+│   ├── destinations.py    # Library path helpers (child-folder listing, folder creation)
 │   ├── duplicates.py      # SHA-256-based duplicate detection
 │   ├── mover.py           # Dry-run and execute batch move logic
 │   ├── routers/
 │   │   ├── scan.py        # GET/POST /api/scan  GET /api/scan/folders
 │   │   ├── destinations.py# /api/destinations
-│   │   ├── move.py        # POST /api/move/dry-run  POST /api/move/execute
+│   │   ├── move.py        # POST /api/move/dry-run  POST /api/move/execute  POST /api/move/delete
 │   │   └── ui.py          # HTML page routes (Jinja2) + /api/geocode
 │   └── templates/         # HTMX + Jinja2 HTML templates
 ├── tests/                 # pytest test suite
@@ -438,13 +440,23 @@ Open `http://<NAS_IP>:9121` in a browser on your local network.
 
 The **Review** page shows all unprocessed files as a draggable tile grid.
 
-- Files are **automatically pre-assigned** to their quarterly destination (`<year>/Q<quarter>`) on load.
-- **Video cards** show a `▶` play-icon overlay.
-- **Photo cards with GPS data** show a `⊙ City, Country` label (loaded in the background).
-- Drag cards onto a destination zone to assign them. Shift+Click or Ctrl+Click for multi-select.
-- To override the quarterly assignment, drag onto an event-folder zone instead.
-- Double-click any card to open a full-screen lightbox (photo or video).
-- Use the grid-size slider to adjust the number of columns (2–10).
+**Destinations panel (right column)**
+
+1. From the **Photo folder** dropdown, select an existing folder in your photos library — or choose "＋ Create new folder…" and type a name.  
+2. By default the same folder name is used in the videos library (**Same folder in videos library** checkbox). Uncheck it to pick an independent video path.  
+3. Click **+ Add destination** to add the zone to your panel. Destinations are saved in the browser (`localStorage`) and persist across page reloads.  
+4. Use the **×** button on any zone to remove it; files on disk are not affected.
+
+**Working with media cards**
+
+- **Source filter** dropdown — show only files from one device.
+- **Sort** dropdown — order cards by date ascending, date descending, or location A–Z.
+- Click a card to select it (Shift+Click for range, Ctrl/Cmd+Click to toggle).
+- **Delete selected** (🗑 button, top-right) — permanently deletes the selected source files after a confirmation prompt. Use this to remove unwanted duplicates or junk before moving.
+- Drag one or more selected cards onto a destination zone to assign them. Photos go to the photos path; videos go to the videos path.
+- Double-click a card to open it full-screen. Use the **‹ / ›** arrows or ← / → keyboard keys to navigate without closing the lightbox.
+- Cards with GPS data show a `⊙ City, Country` label; the location also appears in the lightbox caption.
+- Use the **Grid size** slider to change the number of columns (2–10).
 
 #### Step 3 – Preview changes (dry-run)
 
@@ -485,12 +497,14 @@ The application also exposes a JSON API (documented at `http://<NAS_IP>:9121/doc
 | `GET` | `/api/scan/result` | Retrieve last scan result |
 | `GET` | `/api/scan/folders` | List scannable sub-folders per device |
 | `GET` | `/api/geocode` | Reverse-geocode GPS coords (`?lat=&lon=`) |
-| `GET` | `/api/destinations/categories` | List event categories |
-| `GET` | `/api/destinations/events` | List event folders in a category |
-| `POST` | `/api/destinations/events` | Create a new event folder |
-| `GET` | `/api/destinations/quarterly` | Resolve a quarterly path |
+| `GET` | `/api/destinations/child-folders` | List first-level sub-folders in the photos or videos library (`?root=photos\|videos`) |
+| `POST` | `/api/destinations/ensure-folder` | Create `<library_root>/<name>` if it does not exist (body: `{root, name}`) |
+| `GET` | `/api/destinations/categories` | List event categories (legacy) |
+| `GET` | `/api/destinations/events` | List event folders in a category (legacy) |
+| `POST` | `/api/destinations/events` | Create a new event folder (legacy) |
 | `POST` | `/api/move/dry-run` | Simulate a batch move |
 | `POST` | `/api/move/execute` | Execute a batch move |
+| `POST` | `/api/move/delete` | Permanently delete source files by path (body: `{paths: [...]}`) |
 | `GET` | `/api/move/log` | Recent audit log entries |
 | `GET` | `/thumbnails` | Serve a thumbnail (`?src=<path>`) |
 | `GET` | `/health` | Health check |

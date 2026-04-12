@@ -11,6 +11,7 @@ from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel
 
 from app.config import get_config
+from app.mover import write_log_entry
 from app.scanner import get_last_scan_result, get_scan_progress, scan_all_devices
 
 router = APIRouter(prefix="/api/scan", tags=["scan"])
@@ -50,8 +51,32 @@ async def trigger_scan(
     date_from = date.fromisoformat(body.date_from) if body and body.date_from else None
     date_to   = date.fromisoformat(body.date_to)   if body and body.date_to   else None
 
-    background_tasks.add_task(scan_all_devices, include_paths, date_from, date_to)
+    background_tasks.add_task(_run_scan, include_paths, date_from, date_to)
     return {"status": "started"}
+
+
+async def _run_scan(
+    include_paths: Optional[list[str]],
+    date_from: Optional[date],
+    date_to: Optional[date],
+) -> None:
+    """Wrapper that logs scan start/end to the audit log before delegating."""
+    scope = ", ".join(include_paths) if include_paths else "all devices"
+    filters = ""
+    if date_from or date_to:
+        filters = f"date_from={date_from or '*'} date_to={date_to or '*'}"
+    write_log_entry("scan_start", note=f"scope={scope}" + (f" {filters}" if filters else ""))
+    try:
+        await scan_all_devices(include_paths, date_from, date_to)
+        result = get_last_scan_result()
+        total = result.total_files if result else 0
+        errors = result.errors if result else []
+        if errors:
+            for err in errors:
+                write_log_entry("scan_error", note=str(err))
+        write_log_entry("scan_complete", note=f"total_files={total} errors={len(errors)}")
+    except Exception as exc:  # noqa: BLE001
+        write_log_entry("scan_error", error=str(exc))
 
 
 @router.get("/result")

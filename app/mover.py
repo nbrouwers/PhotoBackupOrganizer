@@ -110,21 +110,45 @@ def _resolve_filename(dest_dir: Path, filename: str) -> tuple[Path, str, Optiona
 
 def _audit_log_path() -> Path:
     import os
-    log_dir = Path(os.environ.get("PHOTO_BACKUP_LOG_DIR", "/logs"))
+    log_dir_str = os.environ.get("PHOTO_BACKUP_LOG_DIR", "")
+    if log_dir_str:
+        log_dir = Path(log_dir_str)
+    else:
+        # Derive from the configured cache path so local dev on Windows also
+        # has a writable location (e.g. C:\Temp\pbo\logs next to .\cache).
+        # In Docker the cache is /cache, so logs end up at /logs — same as before.
+        from app.config import get_config
+        log_dir = Path(get_config().cache.path).parent / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir / "photo-backup-organizer.log"
 
 
 def _write_audit_entry(result: FileResult) -> None:
     """Append a single line to the persistent audit log (NFR-05, FR-13)."""
+    write_log_entry(
+        action=result.action,
+        src=result.src,
+        dest=result.final_dest,
+        note=result.conflict_note or "",
+        error=result.error_message or "",
+    )
+
+
+def write_log_entry(
+    action: str,
+    src: str = "",
+    dest: str = "",
+    note: str = "",
+    error: str = "",
+) -> None:
+    """Write a tab-separated entry to the persistent audit log.
+
+    Public so that routers (scan, delete, etc.) can log non-move events.
+    """
     now = datetime.now(timezone.utc).isoformat()
     try:
         with _audit_log_path().open("a", encoding="utf-8") as fh:
-            fh.write(
-                f"{now}\t{result.action}\t{result.src}\t{result.final_dest}"
-                f"\t{result.conflict_note or ''}"
-                f"\t{result.error_message or ''}\n"
-            )
+            fh.write(f"{now}\t{action}\t{src}\t{dest}\t{note}\t{error}\n")
     except OSError as exc:
         logger.error("Failed to write audit log: %s", exc)
 
