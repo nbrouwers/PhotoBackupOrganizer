@@ -189,6 +189,20 @@
     object-fit: contain;
     box-shadow: 0 8px 40px rgba(0,0,0,.6);
   }
+  /* Lightbox nav arrows */
+  .lb-nav {
+    position: absolute;
+    top: 50%; transform: translateY(-50%);
+    background: none; border: none;
+    color: #c0ccd8; font-size: 2.4rem;
+    cursor: pointer; line-height: 1;
+    padding: .4rem .7rem;
+    transition: color .15s;
+    user-select: none;
+  }
+  .lb-nav:hover { color: #fff; }
+  #lb-prev { left: .6rem; }
+  #lb-next { right: .6rem; }
 </style>
 {% endblock %}
 {% block content %}
@@ -208,6 +222,8 @@ const VIDEOS_ROOT = {{ videos_root | tojson }};
 <!-- Lightbox overlay -->
 <div id="lightbox" onclick="closeLightboxIfBg(event)">
   <button id="lb-close" onclick="closeLightbox()" title="Close (Esc)">✕</button>
+  <button class="lb-nav" id="lb-prev" onclick="lbStep(-1)" title="Previous (←)">&#8249;</button>
+  <button class="lb-nav" id="lb-next" onclick="lbStep(1)"  title="Next (→)">&#8250;</button>
   <div id="lb-caption"></div>
   <div id="lb-body"></div>
 </div>
@@ -216,6 +232,21 @@ const VIDEOS_ROOT = {{ videos_root | tojson }};
   <div id="top-bar-left">
     <span id="unassigned-count"></span>
     <span id="assigned-count"></span>
+    <!-- Source filter -->
+    <select id="source-filter" onchange="applyFilterSort()"
+            style="font-size:var(--font-size-sm);padding:.25rem .5rem;border-radius:5px;border:1px solid var(--clr-border);background:var(--clr-surface);color:var(--clr-text);">
+      <option value="">All sources</option>
+      {% for device in devices %}
+      <option value="{{ device.label }}">{{ device.label }}</option>
+      {% endfor %}
+    </select>
+    <!-- Sort -->
+    <select id="sort-order" onchange="applyFilterSort()"
+            style="font-size:var(--font-size-sm);padding:.25rem .5rem;border-radius:5px;border:1px solid var(--clr-border);background:var(--clr-surface);color:var(--clr-text);">
+      <option value="date-asc">Date ↑</option>
+      <option value="date-desc">Date ↓</option>
+      <option value="location">Location A–Z</option>
+    </select>
     <div class="tile-slider-wrap">
       <label for="tile-slider">Grid size</label>
       <input type="range" id="tile-slider" min="2" max="10" value="5"
@@ -305,6 +336,36 @@ const assignments = new Map(); // src_path → { destDir, destLabel }
 const selected    = new Set(); // src_path strings currently selected
 let _lastClickedSrc = null;   // for shift+click range
 let _dragSrcs       = [];     // src_paths being dragged (1 or many)
+let _lbSrc          = null;   // src currently open in lightbox
+
+// ── Filter / Sort ─────────────────────────────────────────────────────────────
+function applyFilterSort() {
+  const source = document.getElementById('source-filter').value;
+  const sort   = document.getElementById('sort-order').value;
+  const grid   = document.getElementById('files-grid');
+  const cards  = allCards();
+
+  // Filter: hide/show cards
+  for (const c of cards) {
+    const visible = !source || c.dataset.device === source;
+    c.style.display = visible ? '' : 'none';
+  }
+
+  // Sort visible cards inside the grid
+  const visible = cards.filter(c => c.style.display !== 'none');
+  visible.sort((a, b) => {
+    if (sort === 'date-asc')  return (a.dataset.date || '').localeCompare(b.dataset.date || '');
+    if (sort === 'date-desc') return (b.dataset.date || '').localeCompare(a.dataset.date || '');
+    if (sort === 'location') {
+      const la = a.querySelector('.location-text')?.textContent || '';
+      const lb = b.querySelector('.location-text')?.textContent || '';
+      return la.localeCompare(lb);
+    }
+    return 0;
+  });
+  for (const c of visible) grid.appendChild(c); // move to end in sorted order
+  updateCounts();
+}
 
 // ── Selection helpers ────────────────────────────────────────────────────────
 function allCards() { return Array.from(document.querySelectorAll('.file-card')); }
@@ -346,7 +407,22 @@ function rangeSelectTo(card) {
 }
 
 // ── Lightbox ─────────────────────────────────────────────────────────────────
+function visibleCards() { return allCards().filter(c => c.style.display !== 'none'); }
+
 function openLightbox(card) {
+  _lbSrc = card.dataset.src;
+  _renderLightbox(card);
+}
+
+function lbStep(dir) {
+  const cards = visibleCards();
+  const idx   = cards.findIndex(c => c.dataset.src === _lbSrc);
+  if (idx === -1) return;
+  const next = cards[idx + dir];
+  if (next) { _lbSrc = next.dataset.src; _renderLightbox(next); }
+}
+
+function _renderLightbox(card) {
   const src     = card.dataset.src;
   const media   = card.dataset.media;
   const caption = card.querySelector('.card-name')?.textContent || src;
@@ -354,6 +430,13 @@ function openLightbox(card) {
   const locEl   = card.querySelector('.location-text');
   const locText = locEl && locEl.textContent.startsWith('\u229a ') ? locEl.textContent : '';
   document.getElementById('lb-caption').textContent = caption + (locText ? '  ' + locText : '');
+
+  // Show/hide nav arrows
+  const cards = visibleCards();
+  const idx   = cards.findIndex(c => c.dataset.src === src);
+  document.getElementById('lb-prev').style.visibility = idx > 0 ? 'visible' : 'hidden';
+  document.getElementById('lb-next').style.visibility = idx < cards.length - 1 ? 'visible' : 'hidden';
+
   const body = document.getElementById('lb-body');
   body.innerHTML = '';
   if (media === 'video') {
@@ -436,7 +519,13 @@ function closeLightboxIfBg(e) {
   if (e.target === document.getElementById('lightbox')) closeLightbox();
 }
 
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeLightbox();
+  if (document.getElementById('lightbox').style.display === 'flex') {
+    if (e.key === 'ArrowLeft')  lbStep(-1);
+    if (e.key === 'ArrowRight') lbStep(1);
+  }
+});
 
 // ── Build quarterly zones from embedded scan data ────────────────────────────
 function buildQuarterlyZones() {
