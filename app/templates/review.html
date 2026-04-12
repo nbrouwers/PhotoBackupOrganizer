@@ -151,9 +151,16 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: .8rem;
     flex-wrap: wrap;
     gap: .6rem;
+    position: sticky;
+    top: 56px;          /* sits just below the 56px app nav */
+    z-index: 100;
+    background: var(--clr-bg);
+    padding: .55rem 0;
+    margin-bottom: .4rem;
+    border-bottom: 1px solid var(--clr-border);
+    box-shadow: 0 2px 8px rgba(0,0,0,.07);
   }
   #top-bar-left  { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
   #top-bar-right { display: flex; gap: .5rem; }
@@ -1073,27 +1080,70 @@ function renderDryRunResult(data, list) {
     </tr>`;
   }
   html += `</tbody></table>
-    <div style="display:flex;gap:.8rem;margin-top:1rem;">
-      <button class="btn btn-success"
+    <div style="display:flex;gap:.8rem;margin-top:1rem;align-items:center;flex-wrap:wrap;">
+      <button class="btn btn-success" id="confirm-move-btn"
         data-list="${listAttr}"
-        onclick="confirmExecute(this.dataset.list)">
+        onclick="confirmExecute(this)">
         ✔ Confirm &amp; Move
       </button>
-      <button class="btn btn-secondary"
+      <button class="btn btn-secondary" id="confirm-back-btn"
         onclick="document.getElementById('result-area').innerHTML=''">
         ← Back
       </button>
+      <div id="move-progress-wrap" style="display:none;flex:1;min-width:160px;">
+        <div style="font-size:.78rem;color:var(--clr-text-3);margin-bottom:.3rem;" id="move-progress-label">Moving files…</div>
+        <div style="background:var(--clr-surface-2);border-radius:6px;height:8px;overflow:hidden;">
+          <div id="move-progress-bar"
+               style="height:100%;width:0%;background:var(--clr-success);
+                      border-radius:6px;transition:width .4s ease;"></div>
+        </div>
+      </div>
     </div></div>`;
   area.innerHTML = html;
   area.scrollIntoView({ behavior: 'smooth' });
 }
 
-async function confirmExecute(listJson) {
-  await fetch('/api/move/execute', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ assignments: JSON.parse(listJson) }),
-  });
+async function confirmExecute(btn) {
+  const listJson = btn.dataset.list;
+  const list     = JSON.parse(listJson);
+  const total    = list.length;
+
+  // Lock UI
+  btn.disabled = true;
+  const backBtn = document.getElementById('confirm-back-btn');
+  if (backBtn) backBtn.disabled = true;
+
+  const wrap      = document.getElementById('move-progress-wrap');
+  const bar       = document.getElementById('move-progress-bar');
+  const label     = document.getElementById('move-progress-label');
+  if (wrap) wrap.style.display = '';
+
+  // Animate bar to ~85 % during the request (indeterminate phase)
+  let pct = 0;
+  const tick = setInterval(() => {
+    pct = Math.min(pct + (85 - pct) * 0.07, 84);
+    if (bar) bar.style.width = pct.toFixed(1) + '%';
+  }, 250);
+
+  try {
+    const resp = await fetch('/api/move/execute', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ assignments: list }),
+    });
+    clearInterval(tick);
+    const data = resp.ok ? await resp.json() : null;
+    const done = data?.summary?.move ?? total;
+    if (label) label.textContent = `Moved ${done} of ${total} file${total !== 1 ? 's' : ''}.`;
+    if (bar)   bar.style.width   = '100%';
+    // Brief pause so the user sees 100 % before navigating
+    await new Promise(r => setTimeout(r, 800));
+  } catch (err) {
+    clearInterval(tick);
+    if (label) label.textContent = 'Error — see log for details.';
+    if (bar)   { bar.style.background = 'var(--clr-danger)'; bar.style.width = '100%'; }
+    await new Promise(r => setTimeout(r, 1500));
+  }
   window.location.href = '/log';
 }
 
