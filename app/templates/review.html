@@ -190,6 +190,14 @@
     transition: color .15s;
   }
   #lb-close:hover { color: #fff; }
+  #lb-delete {
+    position: absolute; top: 1.1rem; right: 4rem;
+    background: none; border: none; color: #c0ccd8;
+    font-size: 1.5rem; cursor: pointer; line-height: 1;
+    transition: color .15s;
+    display: flex; align-items: center; gap: .3rem;
+  }
+  #lb-delete:hover { color: #f87171; }
   #lb-caption {
     color: #7a9bbf;
     font-size: .9rem;
@@ -262,6 +270,7 @@ const VIDEOS_ROOT = {{ videos_root | tojson }};
 <!-- Lightbox overlay -->
 <div id="lightbox" onclick="closeLightboxIfBg(event)">
   <button id="lb-close" onclick="closeLightbox()" title="Close (Esc)">✕</button>
+  <button id="lb-delete" onclick="lbDeleteCurrent()" title="Delete this file from disk">🗑</button>
   <button class="lb-nav" id="lb-prev" onclick="lbStep(-1)" title="Previous (←)">&#8249;</button>
   <button class="lb-nav" id="lb-next" onclick="lbStep(1)"  title="Next (→)">&#8250;</button>
   <div id="lb-caption"></div>
@@ -577,6 +586,53 @@ function closeLightbox() {
   if (v) { v.pause(); v.src = ''; }
   body.innerHTML = '';
   document.getElementById('lightbox').style.display = 'none';
+}
+
+async function lbDeleteCurrent() {
+  if (!_lbSrc) return;
+  const src = _lbSrc;
+  const filename = src.split(/[\\/]/).pop();
+  if (!confirm(`Permanently delete \u201c${filename}\u201d from disk?\nThis cannot be undone.`)) return;
+
+  const cards   = visibleCards();
+  const idx     = cards.findIndex(c => c.dataset.src === src);
+  const nextSrc = cards[idx + 1]?.dataset.src ?? cards[idx - 1]?.dataset.src ?? null;
+
+  const resp = await fetch('/api/move/delete', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ paths: [src] }),
+  });
+  if (!resp.ok) {
+    alert('Delete failed. See console for details.');
+    console.error('DELETE failed', resp.status, await resp.text()); return;
+  }
+  const data = await resp.json();
+  const r    = data.results[0];
+  if (r?.status === 'deleted' || r?.status === 'not_found') {
+    const card = cardBySrc(src);
+    if (card) {
+      const prev = assignments.get(src);
+      if (prev?.zoneEl) {
+        const countKey = card.dataset.media === 'video' ? 'pendingVideos' : 'pendingPhotos';
+        prev.zoneEl.dataset[countKey] = Math.max(0, parseInt(prev.zoneEl.dataset[countKey] || '0') - 1);
+        updateZoneCount(prev.zoneEl);
+      }
+      assignments.delete(src);
+      selected.delete(src);
+      card.remove();
+    }
+    syncDeleteBtn();
+    updateCounts();
+    if (nextSrc) {
+      const nextCard = cardBySrc(nextSrc);
+      if (nextCard) { _lbSrc = nextSrc; _renderLightbox(nextCard); return; }
+    }
+    closeLightbox();
+  } else {
+    alert('Could not delete file. See console for details.');
+    console.warn('Delete result:', r);
+  }
 }
 
 function closeLightboxIfBg(e) {
