@@ -12,9 +12,11 @@ from pydantic import BaseModel
 from app.destinations import (
     create_event_folder,
     ensure_child_folder,
+    ensure_folder_path,
     list_child_folders,
     list_event_categories,
     list_event_folders,
+    list_subfolders_at,
     resolve_quarterly_path,
 )
 
@@ -111,20 +113,37 @@ async def get_child_folders(root: Literal["photos", "videos"]) -> dict:
     return {"folders": list_child_folders(media_type)}
 
 
+@router.get("/folder-children")
+async def get_folder_children(
+    root: Literal["photos", "videos"],
+    path: str = "",
+) -> dict:
+    """Return immediate subdirectory names at ``<library_root>/<path>``.
+
+    Used by the folder-tree picker in the review UI.
+    """
+    media_type = "photo" if root == "photos" else "video"
+    try:
+        children = list_subfolders_at(media_type, path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"children": children}
+
+
 class EnsureFolderRequest(BaseModel):
     root: Literal["photos", "videos"]
-    name: str
+    name: str  # forward-slash-separated relative path, e.g. "Holidays/2026 Amsterdam"
 
 
 @router.post("/ensure-folder")
 async def ensure_folder(req: EnsureFolderRequest) -> dict:
-    """Create ``<library_root>/<name>`` if it does not yet exist.
+    """Create ``<library_root>/<name>`` (including any parent directories).
 
-    The name must be a simple folder name (no path separators).
+    ``name`` may contain forward slashes to create nested paths.
     """
     media_type = "photo" if req.root == "photos" else "video"
     try:
-        path = ensure_child_folder(media_type, req.name)
+        path = ensure_folder_path(media_type, req.name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"path": str(path), "created": True}

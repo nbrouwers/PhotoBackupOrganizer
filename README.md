@@ -497,8 +497,8 @@ The application also exposes a JSON API (documented at `http://<NAS_IP>:9121/doc
 | `GET` | `/api/scan/result` | Retrieve last scan result |
 | `GET` | `/api/scan/folders` | List scannable sub-folders per device |
 | `GET` | `/api/geocode` | Reverse-geocode GPS coords (`?lat=&lon=`) |
-| `GET` | `/api/destinations/child-folders` | List first-level sub-folders in the photos or videos library (`?root=photos\|videos`) |
-| `POST` | `/api/destinations/ensure-folder` | Create `<library_root>/<name>` if it does not exist (body: `{root, name}`) |
+| `GET` | `/api/destinations/folder-children` | List immediate sub-folders at any depth in the library tree (`?root=photos\|videos&path=rel/path`) |
+| `POST` | `/api/destinations/ensure-folder` | Create a folder at an arbitrary relative path — supports nesting with `/` (body: `{root, name}`) |
 | `GET` | `/api/destinations/categories` | List event categories (legacy) |
 | `GET` | `/api/destinations/events` | List event folders in a category (legacy) |
 | `POST` | `/api/destinations/events` | Create a new event folder (legacy) |

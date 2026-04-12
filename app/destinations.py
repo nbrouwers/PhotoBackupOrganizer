@@ -147,6 +147,50 @@ def list_child_folders(media_type: MediaType) -> list[str]:
         return []
 
 
+def list_subfolders_at(media_type: MediaType, rel_path: str = "") -> list[str]:
+    """Return names of immediate subdirectories at ``<library_root>/<rel_path>``.
+
+    Synology internal directories and hidden dirs are excluded.
+    Security: *rel_path* is resolved against the library root and must not
+    escape it.
+    """
+    root = _library_root(media_type).resolve()
+    if rel_path:
+        target = (root / rel_path.replace("\\", "/")).resolve()
+        if not str(target).startswith(str(root)):
+            raise ValueError(f"Path {rel_path!r} escapes the library root")
+    else:
+        target = root
+    if not target.exists():
+        return []
+    try:
+        return sorted(
+            d.name
+            for d in target.iterdir()
+            if d.is_dir() and not d.name.startswith(".") and d.name not in _SYNOLOGY_SKIP
+        )
+    except OSError as exc:
+        logger.warning("Could not list subfolders in %s: %s", target, exc)
+        return []
+
+
+def ensure_folder_path(media_type: MediaType, rel_path: str) -> Path:
+    """Create and return ``<library_root>/<rel_path>``.
+
+    *rel_path* may contain forward slashes for nested creation.
+    A ``ValueError`` is raised on empty input or path traversal.
+    """
+    if not rel_path or not rel_path.strip("/"):
+        raise ValueError("rel_path must not be empty")
+    root = _library_root(media_type).resolve()
+    target = (root / rel_path.replace("\\", "/")).resolve()
+    if not str(target).startswith(str(root)):
+        raise ValueError(f"Path {rel_path!r} escapes the library root")
+    target.mkdir(parents=True, exist_ok=True)
+    logger.info("Ensured destination folder: %s", target)
+    return target
+
+
 def ensure_child_folder(media_type: MediaType, name: str) -> Path:
     """Create and return ``<library_root>/<name>``.
 

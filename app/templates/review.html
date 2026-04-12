@@ -210,6 +210,32 @@
   .lb-nav:hover { color: #fff; }
   #lb-prev { left: .6rem; }
   #lb-next { right: .6rem; }
+  /* ── Folder tree picker ── */
+  .folder-tree {
+    border: 1px solid var(--clr-border); border-radius: 5px;
+    background: var(--clr-surface); max-height: 210px; overflow-y: auto;
+    margin-bottom: .35rem; font-size: .8rem;
+  }
+  .tree-item {
+    display: flex; align-items: center; gap: .2rem;
+    padding: .22rem .3rem; cursor: pointer; border-radius: 3px; min-width: 0;
+  }
+  .tree-item:hover { background: var(--clr-surface-2); }
+  .tree-item.selected { background: rgba(37,99,235,.13); color: var(--clr-primary); font-weight: 600; }
+  .tree-toggle {
+    flex-shrink: 0; width: 1rem; text-align: center;
+    font-size: .7rem; color: var(--clr-text-3); line-height: 1; cursor: pointer;
+  }
+  .tree-toggle:hover { color: var(--clr-text); }
+  .tree-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tree-new-row {
+    display: flex; gap: .3rem; align-items: center; padding: .18rem .3rem;
+  }
+  .tree-new-row input { flex: 1; min-width: 0; font-size: .78rem; }
+  .tree-sel-label {
+    font-size: .74rem; color: var(--clr-text-3); margin-bottom: .25rem;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -318,28 +344,20 @@ const VIDEOS_ROOT = {{ videos_root | tojson }};
 
       <div class="dest-section-title" style="margin-top:.85rem;">Add destination</div>
       <div id="add-dest-form">
-        <!-- Photo folder -->
-        <label style="font-size:.78rem;color:var(--clr-text-3);display:block;margin-bottom:.18rem;">Photo folder</label>
-        <select id="photo-folder-select" onchange="onPhotoFolderChange()"
-                style="width:100%;font-size:.8rem;padding:.25rem .45rem;border-radius:5px;border:1px solid var(--clr-border);background:var(--clr-surface);color:var(--clr-text);margin-bottom:.3rem;">
-          <option value="">Loading…</option>
-        </select>
-        <input type="text" id="photo-folder-new" placeholder="New folder name…"
-               style="display:none;width:100%;margin-bottom:.3rem;" />
+        <!-- Photo tree -->
+        <label style="font-size:.78rem;color:var(--clr-text-3);display:block;margin-bottom:.15rem;">Photo destination</label>
+        <div class="tree-sel-label" id="photo-tree-sel">— none selected —</div>
+        <div class="folder-tree" id="photo-tree"></div>
         <!-- Mirror toggle -->
         <label style="font-size:.8rem;display:flex;align-items:center;gap:.4rem;margin-bottom:.45rem;cursor:pointer;">
           <input type="checkbox" id="mirror-videos" checked onchange="onMirrorChange()" />
           Same folder in videos library
         </label>
-        <!-- Video folder (hidden unless mirror unchecked) -->
+        <!-- Video tree (hidden unless mirror unchecked) -->
         <div id="video-folder-row" style="display:none;margin-bottom:.45rem;">
-          <label style="font-size:.78rem;color:var(--clr-text-3);display:block;margin-bottom:.18rem;">Video folder</label>
-          <select id="video-folder-select" onchange="onVideoFolderChange()"
-                  style="width:100%;font-size:.8rem;padding:.25rem .45rem;border-radius:5px;border:1px solid var(--clr-border);background:var(--clr-surface);color:var(--clr-text);margin-bottom:.3rem;">
-            <option value="">── select a folder ──</option>
-          </select>
-          <input type="text" id="video-folder-new" placeholder="New folder name…"
-                 style="display:none;width:100%;" />
+          <label style="font-size:.78rem;color:var(--clr-text-3);display:block;margin-bottom:.15rem;">Video destination</label>
+          <div class="tree-sel-label" id="video-tree-sel">— none selected —</div>
+          <div class="folder-tree" id="video-tree"></div>
         </div>
         <button class="btn btn-secondary btn-sm" onclick="addDestination()" style="width:100%;">+ Add destination</button>
       </div>
@@ -365,6 +383,8 @@ const selected    = new Set(); // src_path strings currently selected
 let _lastClickedSrc = null;   // for shift+click range
 let _dragSrcs       = [];     // src_paths being dragged (1 or many)
 let _lbSrc          = null;   // src currently open in lightbox
+let _photoTree      = null;   // FolderPicker for photos
+let _videoTree      = null;   // FolderPicker for videos
 
 // ── Filter / Sort ─────────────────────────────────────────────────────────────
 function applyFilterSort() {
@@ -616,87 +636,188 @@ function removeDestZone(btn) {
   updateCounts();
 }
 
-// ── Destination picker ────────────────────────────────────────────────────────
-async function loadFolderOptions(apiRoot, selectEl) {
-  selectEl.innerHTML = '<option value="">Loading\u2026</option>';
-  try {
-    const resp = await fetch(`/api/destinations/child-folders?root=${apiRoot}`);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const { folders } = await resp.json();
-    selectEl.innerHTML =
-      '<option value="">\u2500\u2500 select a folder \u2500\u2500</option>'
-      + '<option value="__new__">\uff0b Create new folder\u2026</option>'
-      + folders.map(f => `<option value="${escHtml(f)}">${escHtml(f)}</option>`).join('');
-  } catch (err) {
-    selectEl.innerHTML = '<option value="">Failed to load</option>';
-    console.error('loadFolderOptions failed:', err);
+// ── Folder tree picker ────────────────────────────────────────────────────────
+class FolderPicker {
+  constructor(containerId, labelId, apiRoot, libRoot) {
+    this.el      = document.getElementById(containerId);
+    this.labelEl = document.getElementById(labelId);
+    this.apiRoot = apiRoot;
+    this.libRoot = libRoot.replace(/[/\\]+$/, '');
+    this.selRel  = null;  // null=nothing; ''=library root; 'A/B'=nested
+    this._nodes  = new Map([['', { children: null, expanded: false, loading: false }]]);
+    this._expand('');
   }
-}
 
-function onPhotoFolderChange() {
-  const v   = document.getElementById('photo-folder-select').value;
-  const inp = document.getElementById('photo-folder-new');
-  inp.style.display = v === '__new__' ? '' : 'none';
-  if (v === '__new__') inp.focus();
-}
+  get selectedRel()  { return this.selRel; }
 
-function onVideoFolderChange() {
-  const v   = document.getElementById('video-folder-select').value;
-  const inp = document.getElementById('video-folder-new');
-  inp.style.display = v === '__new__' ? '' : 'none';
-  if (v === '__new__') inp.focus();
+  get selectedPath() {
+    if (this.selRel === null) return null;
+    if (!this.selRel) return this.libRoot;
+    const sep = this.libRoot.includes('\\') ? '\\' : '/';
+    return this.libRoot + sep + this.selRel.replace(/\//g, sep);
+  }
+
+  get selectedLabel() {
+    if (this.selRel === null) return null;
+    if (!this.selRel) return this.libRoot.split(/[/\\]/).filter(Boolean).pop() || '/';
+    return this.selRel.split('/').pop();
+  }
+
+  reset() {
+    this.selRel = null;
+    this.labelEl.textContent = '\u2014 none selected \u2014';
+    for (const n of this._nodes.values()) n.expanded = false;
+    this._expand('');
+  }
+
+  async _expand(relPath) {
+    const node = this._nodes.get(relPath);
+    if (!node || node.loading) return;
+    if (node.children !== null) { node.expanded = true; this._render(); return; }
+    node.loading = true;
+    this._render();
+    try {
+      const r = await fetch(`/api/destinations/folder-children?root=${this.apiRoot}&path=${encodeURIComponent(relPath)}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const { children } = await r.json();
+      node.children = children;
+      for (const c of children) {
+        const cr = relPath ? relPath + '/' + c : c;
+        if (!this._nodes.has(cr)) this._nodes.set(cr, { children: null, expanded: false, loading: false });
+      }
+    } catch { node.children = []; }
+    node.loading = false; node.expanded = true;
+    this._render();
+  }
+
+  _collapse(relPath) {
+    const n = this._nodes.get(relPath);
+    if (n) { n.expanded = false; this._render(); }
+  }
+
+  _select(relPath) {
+    this.selRel = relPath;
+    this.labelEl.textContent = relPath || '/';
+    this._render();
+  }
+
+  async _addFolder(parentRel, name) {
+    if (!name) return;
+    const relPath = parentRel ? parentRel + '/' + name : name;
+    if (!await ensureFolder(this.apiRoot, relPath)) return;
+    const pn = this._nodes.get(parentRel);
+    if (pn?.children !== null && !pn.children.includes(name)) {
+      pn.children.push(name); pn.children.sort();
+    }
+    if (!this._nodes.has(relPath)) this._nodes.set(relPath, { children: [], expanded: false, loading: false });
+    this._select(relPath);
+  }
+
+  _render() {
+    this.el.innerHTML = '';
+    this._renderLevel(this.el, '', 0);
+  }
+
+  _renderLevel(el, relPath, depth) {
+    const node = this._nodes.get(relPath);
+    if (!node) return;
+    if (node.loading) {
+      const r = document.createElement('div');
+      r.style.cssText = 'padding:.3rem .35rem;font-size:.75rem;color:var(--clr-text-3);';
+      r.textContent = 'Loading\u2026';
+      el.appendChild(r); return;
+    }
+    if (!node.expanded || !node.children) return;
+
+    for (const childName of node.children) {
+      const childRel = relPath ? relPath + '/' + childName : childName;
+      const cn       = this._nodes.get(childRel);
+      const isSel    = (this.selRel === childRel);
+      const isExp    = cn?.expanded ?? false;
+      const isLeaf   = cn?.children !== null && cn.children.length === 0;
+
+      const row = document.createElement('div');
+      row.className = 'tree-item' + (isSel ? ' selected' : '');
+      row.style.paddingLeft = (0.4 + depth * 1.15) + 'rem';
+      row.addEventListener('click', () => this._select(childRel));
+
+      const tog = document.createElement('span');
+      tog.className = 'tree-toggle';
+      if (!isLeaf) {
+        tog.textContent = isExp ? '\u25be' : '\u25b8';
+        tog.addEventListener('click', e => {
+          e.stopPropagation();
+          isExp ? this._collapse(childRel) : this._expand(childRel);
+        });
+      }
+      row.appendChild(tog);
+
+      const nm = document.createElement('span');
+      nm.className = 'tree-name';
+      nm.textContent = '\ud83d\udcc1 ' + childName;
+      row.appendChild(nm);
+      el.appendChild(row);
+
+      if (isExp) this._renderLevel(el, childRel, depth + 1);
+    }
+
+    // "New folder" input at this level
+    const nr = document.createElement('div');
+    nr.className = 'tree-new-row';
+    nr.style.paddingLeft = (0.4 + depth * 1.15) + 'rem';
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.placeholder = 'New folder\u2026';
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-secondary btn-sm';
+    btn.textContent = '\uff0b';
+    btn.title = 'Create folder here';
+    btn.addEventListener('click', async () => {
+      const n = inp.value.trim(); if (!n) return;
+      btn.disabled = inp.disabled = true;
+      await this._addFolder(relPath, n);
+      inp.value = ''; btn.disabled = inp.disabled = false;
+    });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); btn.click(); } });
+    nr.appendChild(inp); nr.appendChild(btn);
+    el.appendChild(nr);
+  }
 }
 
 function onMirrorChange() {
   const mirror = document.getElementById('mirror-videos');
   const row    = document.getElementById('video-folder-row');
   row.style.display = mirror.checked ? 'none' : '';
-  if (!mirror.checked) {
-    const sel = document.getElementById('video-folder-select');
-    // Lazy-load video folders the first time the row is revealed
-    if (sel.options.length <= 1 && (!sel.options[0] || sel.options[0].value === '')) {
-      loadFolderOptions('videos', sel);
-    }
-  }
 }
 
 async function addDestination() {
-  const photoSel = document.getElementById('photo-folder-select');
-  const photoNew = document.getElementById('photo-folder-new');
-  const mirror   = document.getElementById('mirror-videos').checked;
-  const videoSel = document.getElementById('video-folder-select');
-  const videoNew = document.getElementById('video-folder-new');
+  const mirror = document.getElementById('mirror-videos').checked;
 
-  const photoName = photoSel.value === '__new__' ? photoNew.value.trim() : photoSel.value;
-  if (!photoName) { alert('Please select or enter a photo folder name.'); return; }
-
-  let videoName = photoName;
-  if (!mirror) {
-    videoName = videoSel.value === '__new__' ? videoNew.value.trim() : videoSel.value;
-    if (!videoName) { alert('Please select or enter a video folder name.'); return; }
+  if (_photoTree.selectedRel === null) {
+    alert('Please select a photo destination folder.'); return;
   }
+  const photoDir   = _photoTree.selectedPath;
+  const photoLabel = _photoTree.selectedLabel;
 
-  if (photoSel.value === '__new__') {
-    if (!await ensureFolder('photos', photoName)) return;
-    loadFolderOptions('photos', photoSel);
-    photoNew.value = ''; photoNew.style.display = 'none';
+  let videoDir;
+  if (mirror) {
+    const sep = VIDEOS_ROOT.includes('\\') ? '\\' : '/';
+    videoDir = _photoTree.selectedRel
+      ? VIDEOS_ROOT.replace(/[/\\]+$/, '') + sep + _photoTree.selectedRel.replace(/\//g, sep)
+      : VIDEOS_ROOT.replace(/[/\\]+$/, '');
+  } else {
+    if (_videoTree.selectedRel === null) {
+      alert('Please select a video destination folder.'); return;
+    }
+    videoDir = _videoTree.selectedPath;
   }
-  if (!mirror && videoSel.value === '__new__') {
-    if (!await ensureFolder('videos', videoName)) return;
-    loadFolderOptions('videos', videoSel);
-    videoNew.value = ''; videoNew.style.display = 'none';
-  }
-
-  const sep      = PHOTOS_ROOT.includes('\\') ? '\\' : '/';
-  const photoDir = PHOTOS_ROOT.replace(/[/\\]+$/, '') + sep + photoName;
-  const videoDir = VIDEOS_ROOT.replace(/[/\\]+$/, '') + sep + videoName;
 
   if (document.querySelector(`#dest-zones .dest-zone[data-photo-dir="${CSS.escape(photoDir)}"]`)) {
-    alert(`\u201c${photoName}\u201d is already in your destinations.`); return;
+    alert(`\u201c${photoLabel}\u201d is already in your destinations.`); return;
   }
 
-  addDestZone(photoDir, videoDir, photoName);
-  photoSel.value = '';
+  addDestZone(photoDir, videoDir, photoLabel);
+  _photoTree.reset();
+  if (!mirror) _videoTree.reset();
 }
 
 async function ensureFolder(root, name) {
@@ -806,7 +927,8 @@ document.addEventListener('DOMContentLoaded', () => {
       _dragSrcs = [];
     });
   });
-  loadFolderOptions('photos', document.getElementById('photo-folder-select'));
+  _photoTree = new FolderPicker('photo-tree', 'photo-tree-sel', 'photos', PHOTOS_ROOT);
+  _videoTree = new FolderPicker('video-tree', 'video-tree-sel', 'videos', VIDEOS_ROOT);
   loadSavedZones();
   loadGPSLocations();
   updateCounts();
