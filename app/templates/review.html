@@ -1050,8 +1050,9 @@ async function submitForm(mode) {
 }
 
 function renderDryRunResult(data, list) {
-  const area = document.getElementById('result-area');
-  const s    = data.summary;
+  const area    = document.getElementById('result-area');
+  const s       = data.summary;
+  const listAttr = JSON.stringify(list).replace(/</g, '\\u003c').replace(/"/g, '&quot;');
   let html = `<div class="card">
     <h2>Dry-run Preview</h2>
     <div style="display:flex;gap:.8rem;margin-bottom:1rem;flex-wrap:wrap;">
@@ -1075,7 +1076,8 @@ function renderDryRunResult(data, list) {
   html += `</tbody></table>
     <div style="display:flex;gap:.8rem;margin-top:1rem;">
       <button class="btn btn-success"
-        onclick="confirmExecute(${JSON.stringify(JSON.stringify(list)).replace(/</g,'\\u003c')})">
+        data-list="${listAttr}"
+        onclick="confirmExecute(this.dataset.list)">
         ✔ Confirm &amp; Move
       </button>
       <button class="btn btn-secondary"
