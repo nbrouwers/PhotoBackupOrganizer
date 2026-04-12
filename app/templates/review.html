@@ -129,9 +129,6 @@
     min-width: 22px;
     text-align: center;
   }
-  .zone-thumbs { display: flex; flex-wrap: wrap; gap: .2rem; margin-top: .35rem; }
-  .zone-thumb { width: 34px; height: 34px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 1px solid var(--clr-border); }
-  .zone-thumb:hover { opacity: .7; }
   .dest-section-title {
     font-size: .72rem;
     text-transform: uppercase;
@@ -504,8 +501,7 @@ function addDestZone(container, dir, label) {
     <div class="dest-zone-header">
       <span title="${escHtml(dir)}">${escHtml(label)}</span>
       <span class="dest-count">0</span>
-    </div>
-    <div class="zone-thumbs"></div>`;
+    </div>`;
   zone.addEventListener('dragover',  e  => { e.preventDefault(); zone.classList.add('drag-over'); });
   zone.addEventListener('dragleave', ()  => zone.classList.remove('drag-over'));
   zone.addEventListener('drop',      e  => { e.preventDefault(); zone.classList.remove('drag-over'); handleDrop(zone, e); });
@@ -525,19 +521,10 @@ function autoAssignQuarterly() {
     assignments.set(srcPath, { destDir: quarterly, destLabel });
     card.classList.add('assigned');
     card.querySelector('.dest-badge').textContent = destLabel;
-    const img = card.querySelector('img');
-    if (img && img.src && !img.src.endsWith('/thumbnails')) {
-      const t      = document.createElement('img');
-      t.className  = 'zone-thumb';
-      t.src        = img.src;
-      t.dataset.src = srcPath;
-      t.title      = card.querySelector('.card-name')?.textContent || srcPath;
-      t.onclick    = () => unassign(card);
-      zone.querySelector('.zone-thumbs').appendChild(t);
-    }
+    zone.dataset.count = parseInt(zone.dataset.count || '0') + 1;
   }
   document.querySelectorAll('.dest-zone').forEach(z => {
-    z.querySelector('.dest-count').textContent = z.querySelectorAll('.zone-thumb').length;
+    z.querySelector('.dest-count').textContent = z.dataset.count || '0';
   });
   updateCounts();
 }
@@ -629,29 +616,20 @@ function handleDrop(zone, e) {
     // Remove from previous zone if re-assigning
     const prev = assignments.get(srcPath);
     if (prev) {
-      document.querySelector(`.dest-zone[data-dest-dir="${CSS.escape(prev.destDir)}"] .zone-thumbs`)
-        ?.querySelector(`[data-src="${CSS.escape(srcPath)}"]`)?.remove();
       prevDirsToRefresh.add(prev.destDir);
+      const prevZone = document.querySelector(`.dest-zone[data-dest-dir="${CSS.escape(prev.destDir)}"]`);
+      if (prevZone) prevZone.dataset.count = Math.max(0, parseInt(prevZone.dataset.count || '0') - 1);
     }
 
     assignments.set(srcPath, { destDir, destLabel });
 
-    // Update card badge + add zone thumbnail
+    // Update card badge
     const card = cardBySrc(srcPath);
     if (card) {
       card.classList.add('assigned');
       card.querySelector('.dest-badge').textContent = destLabel;
-      const img = card.querySelector('img');
-      if (img && img.src) {
-        const t       = document.createElement('img');
-        t.className   = 'zone-thumb';
-        t.src         = img.src;
-        t.dataset.src = srcPath;
-        t.title       = card.querySelector('.card-name')?.textContent || srcPath;
-        t.onclick     = () => unassign(card);
-        zone.querySelector('.zone-thumbs').appendChild(t);
-      }
     }
+    zone.dataset.count = parseInt(zone.dataset.count || '0') + 1;
   }
 
   prevDirsToRefresh.forEach(d => refreshZoneCount(d));
@@ -663,8 +641,8 @@ function unassign(card) {
   const srcPath = card.dataset.src;
   const prev    = assignments.get(srcPath);
   if (prev) {
-    document.querySelector(`.dest-zone[data-dest-dir="${CSS.escape(prev.destDir)}"] .zone-thumbs`)
-      ?.querySelector(`[data-src="${CSS.escape(srcPath)}"]`)?.remove();
+    const prevZone = document.querySelector(`.dest-zone[data-dest-dir="${CSS.escape(prev.destDir)}"]`);
+    if (prevZone) prevZone.dataset.count = Math.max(0, parseInt(prevZone.dataset.count || '0') - 1);
     refreshZoneCount(prev.destDir);
   }
   assignments.delete(srcPath);
@@ -677,8 +655,7 @@ function unassign(card) {
 
 function refreshZoneCount(destDir) {
   const zone = document.querySelector(`.dest-zone[data-dest-dir="${CSS.escape(destDir)}"]`);
-  if (zone) zone.querySelector('.dest-count').textContent =
-    zone.querySelectorAll('.zone-thumb').length;
+  if (zone) zone.querySelector('.dest-count').textContent = zone.dataset.count || '0';
 }
 
 function updateCounts() {
