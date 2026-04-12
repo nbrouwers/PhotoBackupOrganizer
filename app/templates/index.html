@@ -136,6 +136,11 @@ async function startScan() {
   btn.disabled = true;
   document.getElementById('scan-spinner').style.display = 'inline-block';
 
+  // Show an immediate "starting" placeholder so the user gets instant feedback.
+  document.getElementById('scan-status').innerHTML =
+    '<div class="alert alert-info" style="display:flex;align-items:center;gap:.6rem;">'
+    + '<span class="spinner"></span> Starting scan…</div>';
+
   const allChecks    = [...document.querySelectorAll('.folder-check')];
   const checkedPaths = allChecks.filter(c => c.checked).map(c => c.dataset.path);
   // null = scan everything (all checked, or no folder list loaded)
@@ -153,8 +158,24 @@ async function startScan() {
 
   btn.disabled = false;
   document.getElementById('scan-spinner').style.display = 'none';
-  // Load the live progress partial — its HTMX attrs handle further polling
-  htmx.ajax('GET', '/scan/progress', { target: '#scan-status', swap: 'innerHTML' });
+
+  // The background task is scheduled but may not have set running=True yet.
+  // Poll the lightweight JSON status endpoint until the task is live, then
+  // load the HTMX-enabled progress partial (which sets up its own 2 s polling).
+  _pollUntilRunning();
+}
+
+function _pollUntilRunning() {
+  fetch('/api/scan/status')
+    .then(r => r.json())
+    .then(s => {
+      if (s.running || s.done) {
+        htmx.ajax('GET', '/scan/progress', { target: '#scan-status', swap: 'innerHTML' });
+      } else {
+        setTimeout(_pollUntilRunning, 150);
+      }
+    })
+    .catch(() => setTimeout(_pollUntilRunning, 500));
 }
 
 function escH(s) {
