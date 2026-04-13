@@ -19,7 +19,7 @@ All logic is in `app/`; templates in `app/templates/`; tests in `tests/`.
    ```powershell
    .venv\Scripts\python.exe -m pytest tests/ -q
    ```
-   All 48 tests must pass. Fix any failures before proceeding.
+   All tests must pass. Fix any failures before proceeding.
 3. **Update documentation** — after any feature addition or behaviour change, update all three:
    - `README.md` — Features section, How it works, Using the application, REST API table
    - `requirements.md` — add or update the relevant FR/NFR; add a `†` footnote if it's new
