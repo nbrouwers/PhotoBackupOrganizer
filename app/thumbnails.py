@@ -20,6 +20,12 @@ from app.database import get_cached_thumbnail, set_cached_thumbnail
 
 logger = logging.getLogger(__name__)
 
+# Video codec names (as reported by ffprobe) that all modern browsers can
+# play natively inside an MP4 or MOV container, so no transcoding is needed.
+_BROWSER_NATIVE_CODECS: frozenset[str] = frozenset(
+    {"h264", "vp8", "vp9", "av1", "avc1"}
+)
+
 
 def _thumb_dir() -> Path:
     cfg = get_config()
@@ -32,6 +38,36 @@ def _thumb_filename(source_path: str) -> str:
     """Derive a stable, unique thumbnail filename from the source path."""
     digest = hashlib.sha256(source_path.encode()).hexdigest()[:16]
     return f"{digest}.jpg"
+
+
+async def probe_video_codec(source_path: str) -> str | None:
+    """Return the video codec name for *source_path* using ``ffprobe``.
+
+    Returns a lowercase codec string (e.g. ``"h264"``, ``"hevc"``) or
+    ``None`` when ffprobe is unavailable or the probe fails.
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe",
+            "-v", "quiet",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=codec_name",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            source_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+        codec = stdout.decode().strip().lower()
+        return codec or None
+    except Exception as exc:
+        logger.debug("ffprobe codec probe failed for %s: %s", source_path, exc)
+        return None
+
+
+def is_browser_native_codec(codec: str | None) -> bool:
+    """Return ``True`` when *codec* can be played natively by modern browsers."""
+    return codec in _BROWSER_NATIVE_CODECS
 
 
 # ---------------------------------------------------------------------------
@@ -123,15 +159,24 @@ async def generate_video_poster(source_path: str) -> Optional[str]:
 
 
 async def generate_video_preview(source_path: str) -> Optional[str]:
-    """Generate a short (max 15 s) H.264/AAC MP4 preview of *source_path*.
+    """Return a path to a browser-playable video preview of *source_path*.
 
-    The preview is transcoded by ffmpeg so it plays in all modern browsers,
-    including those without HEVC/H.265 support (Chrome, Firefox on Linux).
-    Results are cached; the first call blocks for 5–30 s depending on CPU
-    speed and source length.
+    Strategy:
+    1. **Already browser-native** (H.264, VP8/VP9, AV1) — return the
+       original file path directly.  No transcoding, no wait.
+    2. **Needs transcoding** (HEVC/H.265, etc.) — generate a cached H.264
+       MP4 preview (first 15 s) and return that path.
 
-    Returns the path to the preview ``.mp4``, or ``None`` on failure.
+    The fast path (native codec) means Android phone recordings in H.264 are
+    served immediately; only HEVC clips incur the transcoding delay.
     """
+    # --- fast path: probe codec first ---
+    codec = await probe_video_codec(source_path)
+    if is_browser_native_codec(codec):
+        logger.debug("Video is browser-native (%s), skipping transcode: %s", codec, source_path)
+        return source_path   # serve original directly
+
+    # --- slow path: transcode to H.264 and cache ---
     cache_key = f"preview:{source_path}"
     cached = await get_cached_thumbnail(cache_key)
     if cached and Path(cached).exists():

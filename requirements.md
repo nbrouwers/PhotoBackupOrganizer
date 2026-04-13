@@ -58,6 +58,7 @@ A Python application running in a Docker container on a Synology NAS. It moves p
 - **FR-22** The UI shall allow the user to filter visible media cards by source device and sort them by date or GPS location.
 - **FR-23** The UI shall allow the user to browse and select existing library folders as destinations via a lazy-loading tree, or create new folders at any depth inline.
 - **FR-24** The UI shall display a thumbnail preview for photos and a poster-frame preview for videos.
+- **FR-24a†** The application shall probe each video's codec before serving a preview; videos already encoded as browser-native codecs (H.264/VP8/VP9/AV1) shall be streamed directly with no transcoding. Only non-native codecs (e.g. HEVC) shall be transcoded to H.264 on first open, with the result cached for subsequent playback.
 - **FR-25** The UI shall support full-screen preview of individual media items with prev/next navigation and an inline delete action.
 - **FR-26** The UI shall provide a confirmation step before files are physically moved, including a dry-run preview table.
 - **FR-27** The UI shall display move progress during execution and a processing log after each batch move operation.

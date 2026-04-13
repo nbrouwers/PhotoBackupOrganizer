@@ -94,6 +94,9 @@ The original stack is fully compatible with Synology NAS / DSM 7.x, with two imp
     - `generate_photo_thumbnail(path)` — Pillow, 300×300 JPEG, stored in `/cache` volume.
     - `generate_video_poster(path)` — `ffmpeg -ss 00:00:01 -vframes 1`.
     - Both check DB before regenerating.
+    - `probe_video_codec(path)` — `ffprobe -select_streams v:0 -show_entries stream=codec_name`; returns e.g. `"h264"` or `None`.
+    - `is_browser_native_codec(codec)` — returns `True` for h264/vp8/vp9/av1/avc1.
+    - `generate_video_preview(path)` — if codec is browser-native, returns `source_path` unchanged (fast path); otherwise transcodes to H.264 and caches the result.
 
 ---
 
@@ -185,6 +188,7 @@ The original stack is fully compatible with Synology NAS / DSM 7.x, with two imp
 - **`python:3.12-slim-bookworm`** — eliminates Pillow compilation friction; covers amd64 and arm64 NAS hardware.
 - **Multi-arch Docker build** — single image tag runs on all current Synology NAS CPUs.
 - **Pillow removed; ffmpeg only** — thumbnails, video posters, and H.264 previews are all generated via `ffmpeg` subprocess. Removes a binary-dependency pain point.
+- **Native-codec fast path for video preview** — `ffprobe` checks the video codec before any transcoding. Browser-native codecs (H.264/VP8/VP9/AV1) are served via HTTP 302 redirect to `/media` with zero transcoding overhead. HEVC is still transcoded once and cached.
 - **Three move endpoints** — dry-run and execute are separate, explicit API calls.
 - **Same-name collision = skip (not rename)** — avoids silent data mutation; the user must resolve the conflict intentionally.
 - **Lazy folder creation** — destination folders are only created at move time, never speculatively. Preserves a clean library even when operations are cancelled.

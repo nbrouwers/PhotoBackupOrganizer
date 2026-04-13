@@ -90,14 +90,16 @@ def create_app() -> FastAPI:
     # H.264 preview: GET /video-preview?src=<source_path>
     @application.get("/video-preview")
     async def serve_video_preview(src: str):
-        """Return an H.264/AAC MP4 preview clip for the given video source path.
+        """Return a browser-playable video for the given source path.
 
-        Transcodes the first 15 seconds to H.264 so all browsers (including
-        those without HEVC support) can play the video track.  The result is
-        cached; the first request for a given file may take 5–30 s.
+        If the video is already in a browser-native codec (H.264, VP8/VP9,
+        AV1) it is redirected to ``/media`` immediately with no transcoding.
+        Otherwise an H.264 preview clip is generated and cached on first
+        request (may take 5–30 s for HEVC sources).
 
         Security: only paths inside configured device backup roots are allowed.
         """
+        from fastapi.responses import RedirectResponse
         from app.thumbnails import generate_video_preview
 
         # Same path-traversal guard as /media
@@ -110,7 +112,19 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="Source file not found")
 
         preview_path = await generate_video_preview(src)
-        if not preview_path or not Path(preview_path).exists():
+        if not preview_path:
+            return JSONResponse(status_code=404, content={"detail": "Preview not available"})
+
+        # Native-codec fast path: generate_video_preview returns the original
+        # path — redirect to /media so the browser streams the raw file.
+        if Path(preview_path).resolve() == file_path:
+            from urllib.parse import quote
+            return RedirectResponse(
+                url="/media?src=" + quote(src, safe=""),
+                status_code=302,
+            )
+
+        if not Path(preview_path).exists():
             return JSONResponse(status_code=404, content={"detail": "Preview not available"})
         return FileResponse(preview_path, media_type="video/mp4")
 

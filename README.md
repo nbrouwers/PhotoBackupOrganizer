@@ -36,6 +36,7 @@ A Python web application that runs in a Docker container on a Synology NAS. It s
 - **Drag-and-drop assignment** — drag one or more file cards onto a destination zone. Multi-select with Shift+Click or Ctrl+Click before dragging. Photos route to the photos library path; videos route to the videos library path automatically.
 - **Delete selected** — select one or more cards and click 🗑 Delete to permanently remove the source files from the backup folder. A confirmation dialog is shown before any file is deleted.
 - **Video play icon** — video thumbnails are decorated with a `▶` overlay badge so they are instantly distinguishable from photos.
+- **Instant video preview for H.264/VP8/VP9/AV1 files** — clicking a video card opens it in the lightbox immediately with no transcoding wait. ffprobe checks the container codec; browser-native videos are streamed directly from the source. Only HEVC/H.265 files are transcoded to H.264 on first open (cached afterwards).
 - **GPS location labels** — if a photo's EXIF data contains GPS coordinates, the card shows a `⊙ City, Country` label (e.g. `⊙ Amsterdam, Netherlands`). Locations are reverse-geocoded via OpenStreetMap Nominatim, cached permanently in SQLite, and appear in the full-screen lightbox caption.
 - **Full-screen lightbox** — double-click any card to preview the full-resolution photo or play the video inline. Use ‹ / › arrow buttons or ← / → keyboard keys to navigate between visible cards without closing the lightbox. A 🗑 delete button in the lightbox toolbar deletes the currently open file, then automatically advances to the next one.
 - **Tile-size slider** — resize the grid from 2 to 10 columns.
@@ -85,7 +86,7 @@ photo-backup-organizer/
 │   ├── scanner.py         # Backup folder scanner with two-phase progress
 │   ├── metadata.py        # EXIF / ffprobe capture-date and GPS extraction
 │   ├── geocoder.py        # Reverse geocoding via Nominatim (OpenStreetMap)
-│   ├── thumbnails.py      # ffmpeg-only thumbnails (photo + video poster + H.264 preview)
+│   ├── thumbnails.py      # ffmpeg-only thumbnails; codec probe skips transcode for H.264/VP9/AV1
 │   ├── destinations.py    # Library path helpers (child-folder listing, folder creation)
 │   ├── duplicates.py      # SHA-256-based duplicate detection
 │   ├── mover.py           # Dry-run and execute batch move logic
@@ -513,5 +514,6 @@ The application also exposes a JSON API (documented at `http://<NAS_IP>:9121/doc
 | `POST` | `/api/move/execute` | Execute a batch move |
 | `POST` | `/api/move/delete` | Permanently delete source files by path (body: `{paths: [...]}`) |
 | `GET` | `/api/move/log` | Recent audit log entries |
+| `GET` | `/video-preview` | Serve a browser-compatible video preview (`?src=<path>`); 302 redirect for native codecs, H.264 transcode for HEVC |
 | `GET` | `/thumbnails` | Serve a thumbnail (`?src=<path>`) |
 | `GET` | `/health` | Health check |

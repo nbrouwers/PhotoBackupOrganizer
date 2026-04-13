@@ -513,64 +513,28 @@ function _renderLightbox(card) {
   const body = document.getElementById('lb-body');
   body.innerHTML = '';
   if (media === 'video') {
-    // Show a spinner while we fetch the H.264 preview (may take a few seconds
-    // the first time; ffmpeg transcodes to a browser-compatible format).
-    const spinner = document.createElement('div');
-    spinner.innerHTML = '<span class="spinner" style="margin-right:.5rem;"></span> Generating preview\u2026';
-    spinner.style.cssText = 'color:#7a9bbf;font-size:.95rem;display:flex;align-items:center;';
-    body.appendChild(spinner);
-    lb.style.display = 'flex';
-
-    const previewUrl = '/video-preview?src=' + encodeURIComponent(src);
-    fetch(previewUrl, { method: 'HEAD' })
-      .then(r => {
-        body.innerHTML = '';
-        if (r.ok) {
-          // Cached preview available immediately; or will stream once ready
-          const v = document.createElement('video');
-          v.controls = true;
-          v.autoplay = true;
-          v.src      = previewUrl;
-          body.appendChild(v);
-        } else {
-          // Preview not yet cached — fetch it (blocks until ffmpeg finishes)
-          body.innerHTML = '<span class="spinner" style="margin-right:.5rem;"></span>'
-            + ' Generating preview (first time only, please wait\u2026)';
-          Object.assign(body.style, { color: '#7a9bbf', fontSize: '.95rem', display: 'flex', alignItems: 'center' });
-          fetch(previewUrl)
-            .then(pr => {
-              body.innerHTML = '';
-              body.style = '';
-              if (pr.ok) {
-                const v = document.createElement('video');
-                v.controls = true;
-                v.autoplay = true;
-                v.src      = previewUrl;
-                body.appendChild(v);
-              } else {
-                // Fallback: serve original file (audio may work, video depends on browser)
-                const v = document.createElement('video');
-                v.controls = true;
-                v.autoplay = true;
-                v.src      = '/media?src=' + encodeURIComponent(src);
-                body.appendChild(v);
-                const note = document.createElement('p');
-                note.style.cssText = 'color:#7a9bbf;font-size:.8rem;margin-top:.5rem;text-align:center;';
-                note.textContent   = 'Preview unavailable \u2014 playback requires browser HEVC support.';
-                body.appendChild(note);
-              }
-            });
-        }
-      })
-      .catch(() => {
-        // Network error: fall back to original
-        body.innerHTML = '';
-        const v = document.createElement('video');
-        v.controls = true;
-        v.autoplay = true;
-        v.src      = '/media?src=' + encodeURIComponent(src);
-        body.appendChild(v);
-      });
+    const previewUrl  = '/video-preview?src=' + encodeURIComponent(src);
+    const posterUrl   = '/thumbnails?src='    + encodeURIComponent(src);
+    const v = document.createElement('video');
+    v.controls = true;
+    v.autoplay = true;
+    v.poster   = posterUrl;   // show thumbnail immediately while the video loads
+    v.src      = previewUrl;  // browser follows any 302 transparently
+    // If the server is still transcoding (HEVC), loading may be slow.
+    // Show a subtle label underneath the poster so the user knows it's working.
+    const note = document.createElement('p');
+    note.id = 'lb-video-note';
+    note.style.cssText = 'color:#7a9bbf;font-size:.78rem;margin-top:.4rem;text-align:center;display:none;';
+    note.textContent   = 'Generating preview for the first time — please wait\u2026';
+    let noteTimer = setTimeout(() => { note.style.display = ''; }, 3000);
+    v.addEventListener('canplay', () => { clearTimeout(noteTimer); note.style.display = 'none'; });
+    v.addEventListener('error',   () => {
+      clearTimeout(noteTimer); note.style.display = 'none';
+      // Fallback: stream the original file directly
+      v.src = '/media?src=' + encodeURIComponent(src);
+    });
+    body.appendChild(v);
+    body.appendChild(note);
   } else {
     const img = document.createElement('img');
     img.src = '/media?src=' + encodeURIComponent(src);
