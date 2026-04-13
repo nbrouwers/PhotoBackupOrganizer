@@ -178,6 +178,17 @@ function _pollUntilRunning() {
     .catch(() => setTimeout(_pollUntilRunning, 500));
 }
 
+async function cancelScan(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Cancelling…';
+  try {
+    await fetch('/api/scan/cancel', { method: 'POST' });
+  } catch {
+    btn.disabled = false;
+    btn.textContent = '✕ Cancel';
+  }
+}
+
 function escH(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }

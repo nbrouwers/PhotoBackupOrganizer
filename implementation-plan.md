@@ -82,6 +82,9 @@ The original stack is fully compatible with Synology NAS / DSM 7.x, with two imp
 ### Phase 4 – Scanner & Metadata (FR-01–FR-04, FR-10)
 
 9. Implement `app/scanner.py`: `scan_all_devices()` recurses device backup folders, filters by configured extensions, skips already-processed files, returns `MediaFile` objects grouped by device label and capture date.
+   - `ScanProgress.cancelled` flag — set via `request_cancel()`; checked between files in `_scan_device` and between devices in `scan_all_devices`. Scan stops cleanly without a server restart.
+   - `ScanProgress.device_counts` — accumulates `{label, found}` as each device finishes; exposed in `to_dict()` and rendered in the progress panel and the completion banner.
+   - `POST /api/scan/cancel` — sets the cancellation flag; returns `{status: "cancelling"}` immediately.
 10. Implement `app/metadata.py`:
     - `get_capture_date(path)` — `exifread` for photos; `ffprobe` for videos; fallback to `os.path.getmtime`.
     - `get_media_type(path)` — classify as `photo` or `video` by extension.
@@ -189,6 +192,7 @@ The original stack is fully compatible with Synology NAS / DSM 7.x, with two imp
 
 ## Key Decisions
 
+- **Cooperative cancellation via flag** — `ScanProgress.cancelled` is a plain boolean checked between files and between devices; no threads, asyncio cancellation tokens, or OS signals needed. Simple and safe with FastAPI background tasks.
 - **`python:3.12-slim-bookworm`** — eliminates Pillow compilation friction; covers amd64 and arm64 NAS hardware.
 - **Multi-arch Docker build** — single image tag runs on all current Synology NAS CPUs.
 - **Pillow removed; ffmpeg only** — thumbnails, video posters, and H.264 previews are all generated via `ffmpeg` subprocess. Removes a binary-dependency pain point.

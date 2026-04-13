@@ -81,8 +81,16 @@ class ScanProgress:
         self.scanned: int = 0                      # files processed so far (across all devices)
         self.total: int = 0                        # total media files discovered in pre-count
         self.found: int = 0                        # unprocessed files found so far
+        self.cancelled: bool = False               # set to True to request cancellation
         self.result: Optional[ScanResult] = None
         self.error: Optional[str] = None
+        # Accumulates as each device finishes: [{label, found}]
+        self.device_counts: list[dict[str, object]] = []
+
+    def request_cancel(self) -> None:
+        """Signal the running scan to stop after the current file."""
+        if self.running:
+            self.cancelled = True
 
     @property
     def percent(self) -> int:
@@ -100,8 +108,10 @@ class ScanProgress:
             "total": self.total,
             "found": self.found,
             "percent": self.percent,
+            "cancelled": self.cancelled,
             "done": not self.running and self.result is not None,
             "error": self.error,
+            "device_counts": self.device_counts,
         }
 
 
@@ -176,6 +186,11 @@ async def _scan_device(
     )
 
     for idx, file_path in enumerate(candidates, start=1):
+        # Check cancellation between every file
+        if _progress.cancelled:
+            logger.info("[%s] Scan cancelled after %d/%d files", device_label, idx - 1, len(candidates))
+            break
+
         path_str = str(file_path)
         _progress.current_file = file_path.name
 
@@ -321,14 +336,22 @@ async def scan_all_devices(
 
         # ── Phase 2: process each device ──────────────────────────────────
         for device_label, device_path, candidates in device_candidates:
+            if _progress.cancelled:
+                logger.info("Scan cancelled — skipping remaining devices")
+                break
+
             _progress.current_device = device_label
             _progress.current_file = None
 
             if not candidates:
+                _progress.device_counts.append({"label": device_label, "found": 0})
                 continue
 
             files, errors = await _scan_device(device_path, device_label, candidates)
             result.errors.extend(errors)
+
+            device_found = len(files)
+            _progress.device_counts.append({"label": device_label, "found": device_found})
 
             if files:
                 date_groups = _group_by_date(files)

@@ -25,6 +25,8 @@ A Python application running in a Docker container on a Synology NAS. It moves p
 - **FR-02** The application shall support multiple source devices, each with its own dedicated backup root folder.
 - **FR-03** The application shall recurse into daily subfolders within each device backup folder.
 - **FR-04** The application shall distinguish between photo file types (JPEG, PNG, HEIC, RAW variants, etc.) and video file types (MP4, MOV, MKV, AVI, etc.).
+- **FR-04a†** The user shall be able to cancel a running scan at any time; the scanner shall stop cleanly after processing the current file without requiring a server restart.
+- **FR-04b†** Upon scan completion the UI shall display the number of new files found per device, so the user can immediately verify which devices synced new content.
 
 ### 3.2 Destination Management
 

@@ -33,6 +33,20 @@ async def scan_status() -> dict:
     return get_scan_progress().to_dict()
 
 
+@router.post("/cancel")
+async def cancel_scan() -> dict:
+    """Request cancellation of the currently-running scan.
+
+    Sets a flag that the scanner checks between files.  Returns immediately;
+    the scan may process one more file before it actually stops.
+    """
+    progress = get_scan_progress()
+    if not progress.running:
+        return {"status": "not_running"}
+    progress.request_cancel()
+    return {"status": "cancelling"}
+
+
 @router.post("")
 async def trigger_scan(
     background_tasks: BackgroundTasks,

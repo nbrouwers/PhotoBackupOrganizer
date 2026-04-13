@@ -1,7 +1,17 @@
 {% if progress.done %}
   <div class="alert alert-success">
-    Last scan complete — found <strong>{{ progress.found }}</strong> unprocessed file(s).
-    <a href="/review">Review results →</a>
+    {% if progress.cancelled %}
+      Scan cancelled —
+    {% else %}
+      Last scan complete —
+    {% endif %}
+    found <strong>{{ progress.found }}</strong> unprocessed file(s).
+    {% if progress.device_counts %}
+      <span style="color:var(--clr-text-2);font-size:var(--font-size-sm);margin-left:.4rem;">
+        ({% for d in progress.device_counts %}{{ d.label }}: <strong>{{ d.found }}</strong>{% if not loop.last %}&ensp;|&ensp;{% endif %}{% endfor %})
+      </span>
+    {% endif %}
+    &nbsp;<a href="/review">Review results →</a>
   </div>
 {% elif progress.running %}
   {# ── Live progress panel — re-rendered every 2 s by HTMX polling ── #}
@@ -14,7 +24,11 @@
     <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.4rem;">
       <span style="font-weight:600;">
         <span class="spinner" style="margin-right:.4rem;"></span>
-        Scanning&nbsp;<em>{{ progress.current_device or '…' }}</em>
+        {% if progress.cancelled %}
+          Cancelling…
+        {% else %}
+          Scanning&nbsp;<em>{{ progress.current_device or '…' }}</em>
+        {% endif %}
       </span>
       <span style="font-size:var(--font-size-sm);color:var(--clr-text-2);">
         {% if progress.total %}
@@ -37,7 +51,7 @@
       "></div>
     </div>
 
-    <div style="display:flex;justify-content:space-between;font-size:var(--font-size-sm);color:var(--clr-text-2);">
+    <div style="display:flex;justify-content:space-between;align-items:center;font-size:var(--font-size-sm);color:var(--clr-text-2);">
       <span>
         {% if progress.current_file %}
           {{ progress.current_file }}
@@ -45,11 +59,29 @@
           Discovering files…
         {% endif %}
       </span>
-      <span>
-        {{ progress.percent }}%
-        &nbsp;|&nbsp; <strong>{{ progress.found }}</strong> new file(s) found
-      </span>
+      <div style="display:flex;align-items:center;gap:.75rem;">
+        <span>
+          {{ progress.percent }}%
+          &nbsp;|&nbsp; <strong>{{ progress.found }}</strong> new file(s) found
+        </span>
+        {% if not progress.cancelled %}
+          <button class="btn btn-danger btn-sm"
+                  style="padding:.2rem .6rem;font-size:.72rem;"
+                  onclick="cancelScan(this)"
+                  title="Cancel scan after current file">
+            ✕ Cancel
+          </button>
+        {% endif %}
+      </div>
     </div>
+
+    {% if progress.device_counts %}
+      <div style="margin-top:.55rem;font-size:var(--font-size-sm);color:var(--clr-text-3);border-top:1px solid var(--clr-border);padding-top:.45rem;">
+        {% for d in progress.device_counts %}
+          <span style="margin-right:.9rem;">{{ d.label }}: <strong style="color:var(--clr-text-2);">{{ d.found }}</strong> found</span>
+        {% endfor %}
+      </div>
+    {% endif %}
 
     {% if progress.error %}
       <div class="alert alert-danger" style="margin-top:.75rem;">{{ progress.error }}</div>
