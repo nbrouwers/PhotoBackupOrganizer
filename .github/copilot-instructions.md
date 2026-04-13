@@ -20,10 +20,11 @@ All logic is in `app/`; templates in `app/templates/`; tests in `tests/`.
    .venv\Scripts\python.exe -m pytest tests/ -q
    ```
    All tests must pass. Fix any failures before proceeding.
-3. **Update documentation** — after any feature addition or behaviour change, update all three:
+3. **Update documentation** — after any feature addition or behaviour change, update all four:
    - `README.md` — Features section, How it works, Using the application, REST API table
-   - `requirements.md` — add or update the relevant FR/NFR; add a `†` footnote if it's new
-   - `implementation-plan.md` — update the affected Phase and Key Decisions
+   - `docs/requirements.md` — add or update the relevant FR/NFR; add a `†` footnote if it's new
+   - `docs/implementation-plan.md` — update the affected Phase and Key Decisions
+   - `docs/architecture.md` — update any section whose description or diagram is affected
 4. **Commit and push** after every completed feature or fix:
    ```powershell
    git add <changed files>
@@ -93,6 +94,10 @@ tests/
   test_duplicates.py
   test_metadata.py
   test_mover.py
+docs/
+  requirements.md         – functional and non-functional requirements
+  implementation-plan.md  – phased build plan and key decisions
+  architecture.md         – component diagram, data-flow, design decisions
 ```
 
 ---

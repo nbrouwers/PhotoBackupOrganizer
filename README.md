@@ -107,11 +107,13 @@ photo-backup-organizer/
 ├── tests/                 # pytest test suite
 ├── config/
 │   └── config.example.yaml
+├── docs/
+│   ├── requirements.md
+│   ├── implementation-plan.md
+│   └── architecture.md
 ├── Dockerfile
 ├── docker-compose.yml
-├── pyproject.toml
-├── requirements.md
-└── implementation-plan.md
+└── pyproject.toml
 ```
 
 ---

@@ -32,8 +32,9 @@ All tests must pass. If a test was wrong rather than the code, fix the test too 
 
 If the fix changes what the user sees or how an API behaves:
 - `README.md` — update the relevant prose or REST API table entry.
-- `requirements.md` — update or add the FR that this fix satisfies.
-- `implementation-plan.md` — note the fix in the affected Phase if significant.
+- `docs/requirements.md` — update or add the FR that this fix satisfies.
+- `docs/implementation-plan.md` — note the fix in the affected Phase if significant.
+- `docs/architecture.md` — update if the fix changes a component, data flow, or design decision.
 
 If the fix is purely internal (no behaviour change visible to users), documentation updates are
 optional — skip them and say so in the commit message.

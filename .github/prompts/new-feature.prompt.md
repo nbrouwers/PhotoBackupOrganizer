@@ -31,7 +31,7 @@ Apply the coding conventions from the workspace instructions:
   .venv\Scripts\python.exe -m pytest tests/ -q
   ```
 
-## 4. Update documentation (ALL THREE files)
+## 4. Update documentation (ALL FOUR files)
 
 ### README.md
 - Features section: add a bullet in the relevant subsection (Scan / Review / Move / Infrastructure).
@@ -39,14 +39,20 @@ Apply the coding conventions from the workspace instructions:
 - Using the application: update the step-by-step guide if UX changed.
 - REST API table: add any new endpoints.
 
-### requirements.md
+### docs/requirements.md
 - Add a new FR or update the existing one that this feature satisfies.
 - Mark new requirements with a `†` footnote: `*† New requirement added during implementation.*`
 - Re-number any FR references that shifted.
 
-### implementation-plan.md
+### docs/implementation-plan.md
 - Update the affected Phase(s) with what was actually built.
 - Add a Key Decision entry if a non-obvious design choice was made.
+
+### docs/architecture.md
+- Update any section whose description or diagram is affected by the feature:
+  - New module or router → add it to the component tables and interaction diagram.
+  - New data stored → update the Persistence section.
+  - New design decision → add a row to the Key design decisions table.
 
 ## 5. Commit and push
 
