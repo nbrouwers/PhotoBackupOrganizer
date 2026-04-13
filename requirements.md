@@ -61,7 +61,9 @@ A Python application running in a Docker container on a Synology NAS. It moves p
 - **FR-21b†** Each device-·-date group header in the media grid shall provide a **Select all** button that selects all visible files in that group.
 - **FR-21c†** The UI shall support undoing the most-recently-applied assignment batch via Ctrl/Cmd+Z (up to 50 levels); cards are restored to their previous zone or to unassigned.
 - **FR-21d†** After the first assignment action the UI shall show a **Quick-assign** button (and respond to the `Q` key) that re-assigns the selected cards to the last-used destination zone.
-- **FR-22** The UI shall allow the user to filter visible media cards by source device and sort them by date or GPS location.
+- **FR-22** The UI shall allow the user to filter visible media cards by source device and sort them by date or GPS location. The selected filter and sort order shall be persisted in `localStorage` (`pbo_filter_sort_v1`) and restored on subsequent page loads.
+- **FR-22a†** The destination badge on an assigned card shall display the destination label at all times and change to a ✕ indicator on hover to signal that clicking unassigns the file.
+- **FR-22b†** When no destination zones are configured, the destinations panel shall display a styled onboarding hint guiding the user to create their first zone.
 - **FR-23** The UI shall allow the user to browse and select existing library folders as destinations via a lazy-loading tree, or create new folders at any depth inline.
 - **FR-24** The UI shall display a thumbnail preview for photos and a poster-frame preview for videos.
 - **FR-24a†** The application shall probe each video's codec before serving a preview; videos already encoded as browser-native codecs (H.264/VP8/VP9/AV1) shall be streamed directly with no transcoding. Only non-native codecs (e.g. HEVC) shall be transcoded to H.264 on first open, with the result cached for subsequent playback.

@@ -165,8 +165,10 @@ The original stack is fully compatible with Synology NAS / DSM 7.x, with two imp
     - Destination zone badge: shows `📸 existing+pending  🏂 existing+pending` counts, fetched asynchronously.
     - Dry-run result rendered inline with Confirm & Move button and animated progress bar.
     - Full-screen lightbox with ‹/› navigation, keyboard shortcuts, and 🗑 delete button.
-    - Source filter dropdown and sort controls.
+    - Source filter dropdown and sort controls. Filter + sort values are saved to `localStorage` (`pbo_filter_sort_v1`) via `_saveFilterSort()` and restored via `_restoreFilterSort()` in `DOMContentLoaded` before the first `applyFilterSort()` call.
     - Tile-size slider (2–10 columns).
+    - **Destination badge UX**: CSS `::before` content swaps to `✕` on hover (`.dest-badge:hover::before`) to hint at the unassign action; `title` attribute on the badge contains the full label for tooltip overflow.
+    - **First-use onboarding hint**: `#dest-empty` is a styled `div` (dashed blue border) explaining pick-a-folder → Add destination; hidden as soon as the first zone is added.
     - Bulk delete with confirmation.
     - **Keyboard zone shortcuts (1–9)**: pressing a digit assigns all selected cards to the matching zone; zone badges display their shortcut number.
     - **Date-group headers**: each device·date group has a `Select all` button that selects every visible card in that group.

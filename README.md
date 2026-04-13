@@ -30,7 +30,7 @@ A Python web application that runs in a Docker container on a Synology NAS. It s
 ### Review
 - **Tree-based destination picker** — navigate the photos/videos library as a lazy-loading folder tree. Expand any folder to see its children, create new sub-folders inline at any depth (even immediately inside a just-created folder), and select any folder in the tree as a destination. The relative path from the library root is shown as the zone label.
 - **Destination file counts** — each destination zone badge shows how many photos (📸) and videos (🏅) already exist in that folder, plus how many are staged to be moved there (e.g. `📸 47+3  🏅 12+1`).
-- **Source filter** — filter the grid to show only files from a specific device via the dropdown in the top bar.
+- **Source filter** — filter the grid to show only files from a specific device via the dropdown in the top bar. The selected filter and sort order are persisted in `localStorage` and restored on the next page load.
 - **Sort** — sort visible cards by date ascending, date descending, or location A–Z.
 - **Sticky top bar** — the Delete, Dry-run, and Move buttons stay pinned at the top of the screen while scrolling the media grid, so they are always accessible.
 - **Drag-and-drop assignment** — drag one or more file cards onto a destination zone. Multi-select with Shift+Click or Ctrl+Click before dragging. Photos route to the photos library path; videos route to the videos library path automatically.
@@ -44,6 +44,8 @@ A Python web application that runs in a Docker container on a Synology NAS. It s
 - **GPS location labels** — if a photo's EXIF data contains GPS coordinates, the card shows a `⊙ City, Country` label (e.g. `⊙ Amsterdam, Netherlands`). Locations are reverse-geocoded via OpenStreetMap Nominatim, cached permanently in SQLite, and appear in the full-screen lightbox caption.
 - **Full-screen lightbox** — double-click any card to preview the full-resolution photo or play the video inline. Use ‹ / › arrow buttons or ← / → keyboard keys to navigate between visible cards without closing the lightbox. A 🗑 delete button in the lightbox toolbar deletes the currently open file, then automatically advances to the next one.
 - **Tile-size slider** — resize the grid from 2 to 10 columns.
+- **Destination badge hover hint** — the green destination label on an assigned card switches to a red ✕ indicator on hover to make it clear that clicking the badge unassigns the file.
+- **First-use onboarding hint** — when no destination zones have been added yet, the destinations panel shows a styled prompt explaining how to pick a folder and create the first zone.
 
 ### Move
 - **Dry-run preview** — see exactly what will happen (move / skip duplicate / error) before any file is touched.

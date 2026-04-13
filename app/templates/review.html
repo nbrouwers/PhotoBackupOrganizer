@@ -94,7 +94,9 @@
   }
   .dest-badge::before { content: "→ "; }
   .file-card.assigned .dest-badge { display: block; }
+  /* On hover: swap background to danger red AND hint at unassign via ::after */
   .dest-badge:hover { background: var(--clr-danger-lt); color: var(--clr-danger); }
+  .dest-badge:hover::before { content: "✕ "; }
   /* ── Date-group headers ── */
   .group-header {
     grid-column: 1 / -1;
@@ -396,7 +398,22 @@ const VIDEOS_ROOT = {{ videos_root | tojson }};
 
       <!-- Added destination zones -->
       <div id="dest-zones">
-        <em id="dest-empty" style="font-size:.75rem;color:#adb5bd;">No destinations yet. Add one below.</em>
+        <div id="dest-empty" style="display:flex;flex-direction:column;gap:.5rem;padding:.35rem .1rem;">
+          <em style="font-size:.75rem;color:#adb5bd;">No destinations yet. Add one below.</em>
+          <div style="
+            font-size:.72rem;
+            color:var(--clr-primary);
+            background:rgba(37,99,235,.07);
+            border:1px dashed var(--clr-primary);
+            border-radius:5px;
+            padding:.45rem .6rem;
+            line-height:1.5;
+          ">
+            ⤴ Pick a folder in the tree below, then click
+            <strong>+ Add destination</strong> to create your first zone.
+            Files dragged (or selected + key <kbd style="font-size:.68rem;background:var(--clr-surface-2);border:1px solid var(--clr-border);border-radius:3px;padding:0 .25rem;">1</kbd>) will go there.
+          </div>
+        </div>
       </div>
 
       <div class="dest-section-title" style="margin-top:.85rem;">Add destination</div>
@@ -446,7 +463,33 @@ let _lastUsedZone   = null;   // most-recently-used zone (quick-assign)
 const _undoStack    = [];     // [{srcPath, prevAssignment}] entries, max 50
 
 // ── Filter / Sort ─────────────────────────────────────────────────────────────
+const _LS_FILTER_KEY = 'pbo_filter_sort_v1';
+
+function _saveFilterSort() {
+  try {
+    localStorage.setItem(_LS_FILTER_KEY, JSON.stringify({
+      source: document.getElementById('source-filter').value,
+      sort:   document.getElementById('sort-order').value,
+    }));
+  } catch {}
+}
+
+function _restoreFilterSort() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(_LS_FILTER_KEY) || 'null');
+    if (!saved) return;
+    const sf = document.getElementById('source-filter');
+    const so = document.getElementById('sort-order');
+    // Only apply saved source if that option still exists (device may have been scanned away)
+    if (saved.source && [...sf.options].some(o => o.value === saved.source))
+      sf.value = saved.source;
+    if (saved.sort && [...so.options].some(o => o.value === saved.sort))
+      so.value = saved.sort;
+  } catch {}
+}
+
 function applyFilterSort() {
+  _saveFilterSort();
   const source = document.getElementById('source-filter').value;
   const sort   = document.getElementById('sort-order').value;
   const grid   = document.getElementById('files-grid');
@@ -695,7 +738,7 @@ document.addEventListener('keydown', e => {
 // ── Zone DOM helper ───────────────────────────────────────────────────────────
 function addDestZone(photoDir, videoDir, label, photoRel = '', videoRel = '') {
   const container = document.getElementById('dest-zones');
-  const empty     = document.getElementById('dest-empty');
+  const empty = document.getElementById('dest-empty');
   if (empty) empty.style.display = 'none';
 
   const zone = document.createElement('div');
@@ -1054,6 +1097,8 @@ document.addEventListener('DOMContentLoaded', () => {
   _videoTree = new FolderPicker('video-tree', 'video-tree-sel', 'videos', VIDEOS_ROOT);
   loadSavedZones();
   refreshZoneIndices();
+  _restoreFilterSort();
+  applyFilterSort();
   loadGPSLocations();
   updateCounts();
 });
