@@ -71,6 +71,8 @@ A Python application running in a Docker container on a Synology NAS. It moves p
 - **FR-28†** The UI action buttons (Delete, Dry-run, Move) shall remain visible while the user scrolls the media grid.
 - **FR-29†** Scan operations shall be logged to the audit log (start, completion, error).
 - **FR-30†** The audit log shall be viewable in the web UI as a live-updating HTML table.
+- **FR-30a†** The audit log table shall support filtering by action type (All / Moves / Skips / Errors / Deletes / Scan events) via one-click filter buttons without a page reload.
+- **FR-30b†** Each source and destination path cell in the audit log table shall provide a copy-to-clipboard button so users can locate files without SSH access.
 
 *† New requirement added during implementation.*
 

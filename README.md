@@ -52,6 +52,8 @@ A Python web application that runs in a Docker container on a Synology NAS. It s
 - **Safe copy-then-delete** — files are written to the destination first; the source is deleted only after a successful write.
 - **Lazy folder creation** — destination folders are only created on the filesystem at the moment a file is actually moved into them. No empty folders are ever created speculatively, even when a video destination is mirrored from a photo destination.
 - **Progress bar** — the Confirm & Move button shows an animated progress bar with a file count summary while the execute request is in flight.
+- **Action filter on log page** — one-click filter buttons (All / Moves / Skips / Errors / Deletes / Scan events) instantly narrow the log table without a page reload, so errors are never buried in a large batch.
+- **Copy path to clipboard** — every source and destination path cell has a 📋 button that copies the full filesystem path to the clipboard, making it easy to open the correct folder on the NAS without SSH.
 
 ### Infrastructure
 - **No Docker required on your desktop** — the GitHub Actions CI/CD pipeline builds and publishes the `linux/amd64` image on every push to `main`.
@@ -511,7 +513,7 @@ The application also exposes a JSON API (documented at `http://<NAS_IP>:9121/doc
 | `GET` | `/api/destinations/folder-children` | List immediate sub-folders at any depth in the library tree (`?root=photos\|videos&path=rel/path`) |
 | `GET` | `/api/destinations/folder-count` | Count existing files at a library path (`?root=photos\|videos&path=rel/path`) |
 | `POST` | `/api/destinations/ensure-folder` | Create a folder at an arbitrary relative path — supports nesting with `/` (body: `{root, name}`) |
-| `GET` | `/api/move/log/rows` | Recent audit log as HTML rows (used by HTMX log page) |
+| `GET` | `/api/move/log/rows` | Audit log as HTML rows (`?lines=N&action=filter`) |
 | `GET` | `/api/destinations/categories` | List event categories (legacy) |
 | `GET` | `/api/destinations/events` | List event folders in a category (legacy) |
 | `POST` | `/api/destinations/events` | Create a new event folder (legacy) |

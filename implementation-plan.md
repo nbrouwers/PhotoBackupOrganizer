@@ -150,7 +150,8 @@ The original stack is fully compatible with Synology NAS / DSM 7.x, with two imp
     - `POST /api/move/execute` — moves files, returns `BatchResult`
     - `POST /api/move/delete` — permanently delete source files by path list
     - `GET /api/move/log` — recent audit log entries (JSON)
-    - `GET /api/move/log/rows` — audit log as HTML rows (HTMX)
+    - `GET /api/move/log/rows` — audit log as HTML rows (HTMX); accepts `?action=` substring filter so the log page can show only errors, skips, etc. without a page reload
+    - Module-level `_esc()` helper shared by row rendering and filter/copy-button generation
 18. `app/routers/ui.py`: HTML page routes via Jinja2, `/thumbnails`, `/video-preview`, `/media`, `/api/geocode`
 
 ---
@@ -172,6 +173,8 @@ The original stack is fully compatible with Synology NAS / DSM 7.x, with two imp
     - **Ctrl+Z undo**: all assignment paths (drag-drop, keyboard, quick-assign, badge unassign) funnel through `_applyAssignments`/`pushUndo`; up to 50 undo levels.
     - **Quick-assign button + `Q` shortcut**: appears in the top bar after the first assignment; re-assigns selected cards to the last-used zone.
 21. **`log.html`** — audit log table, live-updated via HTMX polling of `/api/move/log/rows`.
+    - **Action filter bar**: one-click buttons (All / Moves / Skips / Errors / Deletes / Scan events) each trigger an HTMX reload of `#log-table-body` with the corresponding `?action=` param.
+    - **Copy-to-clipboard button**: each non-empty source and destination path cell displays a 📋 button; clicking it writes the path to the clipboard (`navigator.clipboard` with `execCommand` fallback).
 22. `confirm.html` retained as a legacy stub; dry-run confirmation is now inline in `review.html`.
 
 ---

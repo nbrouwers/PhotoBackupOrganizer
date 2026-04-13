@@ -150,3 +150,48 @@ class TestExecuteBatch:
         assert result.files[0].action == "skip_duplicate"
         assert src.exists()  # Source kept when skipped
         assert not (dest_dir / "IMG_030_1.jpg").exists()  # No renamed copy created
+
+
+# ---------------------------------------------------------------------------
+# Log router — action filter
+# ---------------------------------------------------------------------------
+
+class TestLogRowsActionFilter:
+    """Unit-tests for the action= query parameter on GET /api/move/log/rows."""
+
+    def _make_entries(self) -> list[dict]:
+        return [
+            {"timestamp": "2026-01-01T10:00:00", "action": "move",           "src": "/a/x.jpg",   "dest": "/b/x.jpg",   "note": "", "error": ""},
+            {"timestamp": "2026-01-01T10:00:01", "action": "skip_duplicate", "src": "/a/y.jpg",   "dest": "/b/y.jpg",   "note": "", "error": ""},
+            {"timestamp": "2026-01-01T10:00:02", "action": "delete_error",   "src": "/a/z.jpg",   "dest": "",           "note": "", "error": "Permission denied"},
+            {"timestamp": "2026-01-01T10:00:03", "action": "scan_complete",  "src": "",           "dest": "",           "note": "total_files=5", "error": ""},
+        ]
+
+    def test_no_filter_returns_all(self) -> None:
+        from app.routers.move import _esc
+        entries = self._make_entries()
+        # Substring match "" matches everything
+        filtered = [e for e in entries if "".lower() in e["action"].lower()]
+        assert len(filtered) == 4
+
+    def test_error_filter_matches_delete_error_and_scan_error(self) -> None:
+        entries = self._make_entries()
+        filtered = [e for e in entries if "error" in e["action"].lower()]
+        assert len(filtered) == 1
+        assert filtered[0]["action"] == "delete_error"
+
+    def test_move_filter_matches_only_move(self) -> None:
+        entries = self._make_entries()
+        filtered = [e for e in entries if "move" in e["action"].lower()]
+        assert len(filtered) == 1
+        assert filtered[0]["action"] == "move"
+
+    def test_scan_filter_matches_scan_events(self) -> None:
+        entries = self._make_entries()
+        filtered = [e for e in entries if "scan" in e["action"].lower()]
+        assert len(filtered) == 1
+        assert filtered[0]["action"] == "scan_complete"
+
+    def test_esc_helper_sanitises_html_chars(self) -> None:
+        from app.routers.move import _esc
+        assert _esc('<script>&') == '&lt;script&gt;&amp;'

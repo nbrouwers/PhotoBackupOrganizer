@@ -1,5 +1,40 @@
 {% extends "base.html" %}
 {% block title %}Log – Photo Backup Organizer{% endblock %}
+{% block extra_head %}
+<style>
+  /* ── Action filter bar ── */
+  #log-filter-bar { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: .85rem; }
+  .log-filter-btn {
+    font-size: .72rem;
+    padding: .2rem .6rem;
+    border-radius: 4px;
+    border: 1px solid var(--clr-border);
+    background: var(--clr-surface);
+    color: var(--clr-text-2);
+    cursor: pointer;
+    transition: background .12s, color .12s;
+    white-space: nowrap;
+  }
+  .log-filter-btn:hover  { background: var(--clr-surface-2); }
+  .log-filter-btn.active { background: var(--clr-primary); color: #fff; border-color: var(--clr-primary); font-weight: 600; }
+  /* ── Copy-path button ── */
+  .log-copy-btn {
+    display: inline-block;
+    margin-left: .3rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: .8rem;
+    vertical-align: middle;
+    opacity: .45;
+    padding: 0 .1rem;
+    transition: opacity .15s;
+    user-select: none;
+  }
+  .log-copy-btn:hover  { opacity: 1; }
+  .log-copy-btn.copied { opacity: 1; filter: sepia(1) saturate(4) hue-rotate(80deg); }
+</style>
+{% endblock %}
 {% block content %}
 
 <div class="card">
@@ -14,14 +49,23 @@
   </div>
   {% endif %}
 
-  <div style="display:flex;gap:.6rem;margin-bottom:1rem;">
+  <div style="display:flex;gap:.6rem;margin-bottom:.75rem;flex-wrap:wrap;align-items:center;">
     <a href="/" class="btn btn-primary">← New scan</a>
-    <button class="btn btn-secondary"
-            hx-get="/api/move/log/rows"
-            hx-target="#log-table-body"
-            hx-swap="innerHTML">
+    <button class="btn btn-secondary" id="refresh-btn"
+            onclick="reloadRows()">
       ↻ Refresh log
     </button>
+  </div>
+
+  <!-- ── Action filter ── -->
+  <div id="log-filter-bar">
+    <span style="font-size:.72rem;color:var(--clr-text-3);align-self:center;margin-right:.15rem;">Filter:</span>
+    <button class="log-filter-btn active" data-action="" onclick="setFilter(this, '')">All</button>
+    <button class="log-filter-btn" data-action="move"           onclick="setFilter(this, 'move')">Moves</button>
+    <button class="log-filter-btn" data-action="skip_duplicate" onclick="setFilter(this, 'skip_duplicate')">Skips</button>
+    <button class="log-filter-btn" data-action="error"          onclick="setFilter(this, 'error')">Errors</button>
+    <button class="log-filter-btn" data-action="delete"         onclick="setFilter(this, 'delete')">Deletes</button>
+    <button class="log-filter-btn" data-action="scan"           onclick="setFilter(this, 'scan')">Scan events</button>
   </div>
 
   <table>
@@ -41,4 +85,40 @@
     </tbody>
   </table>
 </div>
+
+<script>
+let _activeFilter = '';
+
+function setFilter(btn, action) {
+  _activeFilter = action;
+  document.querySelectorAll('.log-filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  reloadRows();
+}
+
+function reloadRows() {
+  const url = '/api/move/log/rows' + (_activeFilter ? '?action=' + encodeURIComponent(_activeFilter) : '');
+  htmx.ajax('GET', url, { target: '#log-table-body', swap: 'innerHTML' });
+}
+
+function logCopyPath(btn) {
+  const path = btn.dataset.path;
+  if (!path) return;
+  navigator.clipboard.writeText(path).then(() => {
+    btn.classList.add('copied');
+    const orig = btn.innerHTML;
+    btn.textContent = '✔';
+    setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = orig; }, 1500);
+  }).catch(() => {
+    // Fallback for non-HTTPS contexts
+    const ta = document.createElement('textarea');
+    ta.value = path;
+    ta.style.cssText = 'position:fixed;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+  });
+}
+</script>
 {% endblock %}

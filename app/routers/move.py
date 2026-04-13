@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/move", tags=["move"])
 
 
+def _esc(s: str) -> str:
+    """HTML-escape a string for safe inline rendering."""
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 # ---------------------------------------------------------------------------
 # Request / Response schemas
 # ---------------------------------------------------------------------------
@@ -175,13 +180,25 @@ async def get_log(lines: int = 200) -> dict:
 
 
 @router.get("/log/rows", response_class=HTMLResponse)
-async def get_log_rows(lines: int = 200) -> str:
-    """Return audit log entries as HTML <tr> rows for HTMX injection."""
+async def get_log_rows(lines: int = 200, action: str = "") -> str:
+    """Return audit log entries as HTML <tr> rows for HTMX injection.
+
+    When *action* is provided (e.g. ``"error"`` or ``"skip_duplicate"``),
+    only rows whose action contains that substring are returned.
+    """
     from fastapi.responses import HTMLResponse as _HR
     data = await get_log(lines)
     entries = data["entries"]
+
+    # Apply action filter (substring match so "error" catches both
+    # "delete_error" and "scan_error").
+    action_filter = action.strip().lower()
+    if action_filter:
+        entries = [e for e in entries if action_filter in e["action"].lower()]
+
     if not entries:
-        return _HR('<tr><td colspan="5" style="text-align:center;color:var(--clr-text-3);padding:1.5rem;">No log entries yet.</td></tr>')
+        msg = "No log entries yet." if not action_filter else f'No entries matching filter \u201c{_esc(action_filter)}\u201d.'
+        return _HR(f'<tr><td colspan="6" style="text-align:center;color:var(--clr-text-3);padding:1.5rem;">{msg}</td></tr>')
 
     _ACTION_BADGE = {
         "move":           "badge-move",
@@ -194,22 +211,31 @@ async def get_log_rows(lines: int = 200) -> str:
         "scan_error":     "badge-error",
     }
 
-    def _esc(s: str) -> str:
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    def _copy_btn(path: str) -> str:
+        """Small inline copy-to-clipboard button for a file path."""
+        if not path:
+            return ""
+        safe = _esc(path)
+        return (
+            f'<button class="log-copy-btn" '
+            f'data-path="{safe}" '
+            f'onclick="logCopyPath(this)" '
+            f'title="Copy path to clipboard">&#128203;</button>'
+        )
 
     rows = []
     for e in reversed(entries):   # newest first
         badge = _ACTION_BADGE.get(e["action"], "badge-error")
         note_or_error = e["error"] or e["note"]
+        src_cell  = f'{_esc(e["src"])}{_copy_btn(e["src"])}'
+        dest_cell = f'{_esc(e["dest"])}{_copy_btn(e["dest"])}'
         rows.append(
             f'<tr>'
             f'<td style="white-space:nowrap;font-size:.8rem;">{_esc(e["timestamp"])}</td>'
             f'<td><span class="badge {badge}">{_esc(e["action"])}</span></td>'
-            f'<td style="font-size:.8rem;word-break:break-all;">{_esc(e["src"])}</td>'
-            f'<td style="font-size:.8rem;word-break:break-all;">{_esc(e["dest"])}</td>'
+            f'<td style="font-size:.8rem;word-break:break-all;">{src_cell}</td>'
+            f'<td style="font-size:.8rem;word-break:break-all;">{dest_cell}</td>'
             f'<td style="font-size:.8rem;">{_esc(note_or_error)}</td>'
             f'</tr>'
         )
     return _HR("\n".join(rows))
-
-    return {"entries": entries}
