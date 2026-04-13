@@ -97,61 +97,86 @@ The original stack is fully compatible with Synology NAS / DSM 7.x, with two imp
 
 ---
 
-### Phase 6 – Destination Logic (FR-05–FR-08, FR-18)
+### Phase 6 – Destination Logic (FR-05–FR-10, FR-23)
 
 12. Implement `app/destinations.py`:
-    - `resolve_quarterly_path(media_type, capture_date)` → `<root>/<year>/Q<quarter>/`
-    - `list_event_categories()`, `list_event_folders(category)`, `create_event_folder(...)`, `ensure_quarterly_folder(path)`.
+    - `_library_root(media_type)` — resolve photos or videos root from config.
+    - `list_subfolders_at(media_type, rel_path)` — return immediate subdirectory names at any depth, path-traversal protected.
+    - `ensure_folder_path(media_type, rel_path)` — create a folder at an arbitrary forward-slash-separated relative path; raises `ValueError` on traversal or empty input.
+    - `count_files_at(media_type, rel_path)` — count non-hidden files at a given path; used by the destination zone badge.
+    - Legacy helpers kept for backward compatibility: `list_event_categories`, `list_event_folders`, `create_event_folder`, `resolve_quarterly_path`.
 
 ---
 
-### Phase 7 – Duplicate Detection & File Mover (FR-09, FR-11, FR-12, NFR-02)
+### Phase 7 – Duplicate Detection & File Mover (FR-11–FR-16, NFR-02)
 
 13. Implement `app/duplicates.py`: `file_hash(path)`, `is_duplicate(src, dest_dir)`.
 14. Implement `app/mover.py` with two entry points:
 
     **`dry_run_batch(assignments) → DryRunResult`**
-    - Simulates all resolution logic (duplicate detection, filename collision resolution).
+    - Simulates resolution logic: duplicate detection, same-name collision detection.
     - Does **not** touch the filesystem.
     - Returns per-file entries: `{src, resolved_dest, action, final_filename, conflict_note}`.
+    - Actions: `move`, `skip_duplicate`, `skip` (same-name collision), `error`.
 
     **`execute_batch(assignments) → BatchResult`**
+    - Creates destination folder at move time only (FR-08/lazy creation).
     - `shutil.copy2` to destination; `os.remove(src)` only on success (NFR-02).
-    - Calls `mark_processed()` in DB; writes audit log entry.
+    - Calls `mark_processed()` in DB; writes audit log entry via `write_log_entry()`.
+    - `write_log_entry(event, src, dest, note)` — public helper for scan and delete events.
 
 ---
 
 ### Phase 8 – API Routes
 
-15. `app/routers/scan.py`: `GET /api/scan`, `GET /api/scan/status`
-16. `app/routers/destinations.py`: category/event listing and creation, quarterly path calculation
+15. `app/routers/scan.py`:
+    - `POST /api/scan` — trigger background scan, log start/complete/error events
+    - `GET /api/scan/status` — poll scan progress
+    - `GET /api/scan/result` — retrieve last scan result
+    - `GET /api/scan/folders` — list scannable sub-folders per device
+16. `app/routers/destinations.py`:
+    - `GET /api/destinations/folder-children?root=&path=` — lazy-load tree children
+    - `GET /api/destinations/folder-count?root=&path=` — existing file count for zone badge
+    - `POST /api/destinations/ensure-folder` — create folder at arbitrary nested path
+    - Legacy endpoints retained: `/categories`, `/events`, `/child-folders`
 17. `app/routers/move.py`:
     - `POST /api/move/dry-run` — returns `DryRunResult`, no filesystem changes
-    - `POST /api/move/execute` — actually moves files, returns `BatchResult`
-    - `GET /api/move/log` — recent audit log entries
-18. `app/routers/ui.py`: HTML page routes via Jinja2
+    - `POST /api/move/execute` — moves files, returns `BatchResult`
+    - `POST /api/move/delete` — permanently delete source files by path list
+    - `GET /api/move/log` — recent audit log entries (JSON)
+    - `GET /api/move/log/rows` — audit log as HTML rows (HTMX)
+18. `app/routers/ui.py`: HTML page routes via Jinja2, `/thumbnails`, `/video-preview`, `/media`, `/api/geocode`
 
 ---
 
 ### Phase 9 – Web UI
 
-19. **`index.html`** — scan trigger, HTMX polling
-20. **`review.html`** — grouped file list, destination picker, thumbnail previews, "Preview changes" and "Move now" buttons
-21. **`confirm.html`** — dry-run result table with "Confirm & Move" and "Back to review"
-22. **`log.html`** — batch result summary and detail table
+19. **`index.html`** — scan trigger with HTMX polling; two-phase progress bar; scan button race-condition fix: polls `/api/scan/status` until `running=True` before loading progress partial.
+20. **`review.html`** — full drag-and-drop review page:
+    - Sticky top bar with Delete, Dry-run, and Move buttons visible while scrolling.
+    - `FolderPicker` class: lazy-expanding tree, inline folder creation at any depth, selection tracking, localStorage persistence.
+    - Destination zone badge: shows `📸 existing+pending  🏅 existing+pending` counts, fetched asynchronously.
+    - Dry-run result rendered inline with Confirm & Move button and animated progress bar.
+    - Full-screen lightbox with ‹/› navigation, keyboard shortcuts, and 🗑 delete button.
+    - Source filter dropdown and sort controls.
+    - Tile-size slider (2–10 columns).
+    - Bulk delete with confirmation.
+21. **`log.html`** — audit log table, live-updated via HTMX polling of `/api/move/log/rows`.
+22. `confirm.html` retained as a legacy stub; dry-run confirmation is now inline in `review.html`.
 
 ---
 
 ### Phase 10 – Security & Hardening (NFR-06)
 
-23. Optional HTTP Basic Auth FastAPI middleware, enabled when `security.basic_auth` is set.
+23. Optional HTTP Basic Auth FastAPI middleware, enabled when `security.basic_auth` is set in config.
+    All destination and file-path parameters are resolved against the library root and rejected on traversal attempts.
 
 ---
 
 ### Phase 11 – Tests
 
 24. Unit tests: `config.py`, `metadata.py`, `duplicates.py`, `mover.py`, `destinations.py`.
-25. End-to-end integration test: scan → dry-run → execute → verify file at destination, absent from source.
+25. 48 tests passing; covers scan, destination listing/creation, duplicate detection, dry-run and execute batch logic, file counting, and delete operations.
 
 ---
 
@@ -159,8 +184,13 @@ The original stack is fully compatible with Synology NAS / DSM 7.x, with two imp
 
 - **`python:3.12-slim-bookworm`** — eliminates Pillow compilation friction; covers amd64 and arm64 NAS hardware.
 - **Multi-arch Docker build** — single image tag runs on all current Synology NAS CPUs.
+- **Pillow removed; ffmpeg only** — thumbnails, video posters, and H.264 previews are all generated via `ffmpeg` subprocess. Removes a binary-dependency pain point.
 - **Three move endpoints** — dry-run and execute are separate, explicit API calls.
-- **"Move now" shortcut** — bypasses dry-run for power users; dry-run via confirm screen is the default path.
+- **Same-name collision = skip (not rename)** — avoids silent data mutation; the user must resolve the conflict intentionally.
+- **Lazy folder creation** — destination folders are only created at move time, never speculatively. Preserves a clean library even when operations are cancelled.
+- **`FolderPicker` tree UI** — lazy-loading JS class replaces flat dropdown; supports arbitrary nesting, inline creation at any depth, and re-expansion of newly created nodes.
+- **Destination file counts** — `GET /api/destinations/folder-count` drives the zone badge; gives immediate context about how full a destination already is.
+- **Audit log extended** — scan start/complete/error and delete events are all written via `write_log_entry()`, alongside move events.
 - **SQLite** — efficient `is_processed()` lookups; persistent across container restarts.
 - **HTMX + Jinja2** — no JS build pipeline; lightweight.
 - **`shutil.copy2` + `os.remove`** — explicit write-first, delete-on-success contract; safe across NAS volumes.

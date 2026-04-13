@@ -28,21 +28,25 @@ A Python web application that runs in a Docker container on a Synology NAS. It s
 - **Automatic skip of processed files** — an SQLite database records every moved file so it is never re-presented on a subsequent scan.
 
 ### Review
-- **Manual destination management** — add destinations by picking an existing folder from the photos library dropdown, or type a new folder name to create it on the fly. By default the same folder name is mirrored as the video destination; uncheck "Same folder in videos library" to set an independent video path. Destinations persist across page reloads via `localStorage`. Any destination can be removed (assigned cards are unassigned; files on disk are untouched).
+- **Tree-based destination picker** — navigate the photos/videos library as a lazy-loading folder tree. Expand any folder to see its children, create new sub-folders inline at any depth (even immediately inside a just-created folder), and select any folder in the tree as a destination. The relative path from the library root is shown as the zone label.
+- **Destination file counts** — each destination zone badge shows how many photos (📸) and videos (🏅) already exist in that folder, plus how many are staged to be moved there (e.g. `📸 47+3  🏅 12+1`).
 - **Source filter** — filter the grid to show only files from a specific device via the dropdown in the top bar.
 - **Sort** — sort visible cards by date ascending, date descending, or location A–Z.
+- **Sticky top bar** — the Delete, Dry-run, and Move buttons stay pinned at the top of the screen while scrolling the media grid, so they are always accessible.
 - **Drag-and-drop assignment** — drag one or more file cards onto a destination zone. Multi-select with Shift+Click or Ctrl+Click before dragging. Photos route to the photos library path; videos route to the videos library path automatically.
 - **Delete selected** — select one or more cards and click 🗑 Delete to permanently remove the source files from the backup folder. A confirmation dialog is shown before any file is deleted.
 - **Video play icon** — video thumbnails are decorated with a `▶` overlay badge so they are instantly distinguishable from photos.
 - **GPS location labels** — if a photo's EXIF data contains GPS coordinates, the card shows a `⊙ City, Country` label (e.g. `⊙ Amsterdam, Netherlands`). Locations are reverse-geocoded via OpenStreetMap Nominatim, cached permanently in SQLite, and appear in the full-screen lightbox caption.
-- **Full-screen lightbox** — double-click any card to preview the full-resolution photo or play the video inline. Use ‹ / › arrow buttons or ← / → keyboard keys to navigate between visible cards without closing the lightbox.
+- **Full-screen lightbox** — double-click any card to preview the full-resolution photo or play the video inline. Use ‹ / › arrow buttons or ← / → keyboard keys to navigate between visible cards without closing the lightbox. A 🗑 delete button in the lightbox toolbar deletes the currently open file, then automatically advances to the next one.
 - **Tile-size slider** — resize the grid from 2 to 10 columns.
 
 ### Move
-- **Dry-run preview** — see exactly what will happen (move / rename / skip duplicate / error) before any file is touched.
+- **Dry-run preview** — see exactly what will happen (move / skip duplicate / error) before any file is touched.
 - **Duplicate detection** — identical files (same size + SHA-256 hash) at the destination are skipped automatically.
-- **Conflict-free renaming** — non-duplicate filename collisions get a numeric suffix (`_1`, `_2`, …).
+- **Same-filename skip** — if a file with the same name already exists at the destination (but is not a byte-for-byte duplicate), the move is skipped to prevent accidental overwriting. The user can delete or rename the source file and retry.
 - **Safe copy-then-delete** — files are written to the destination first; the source is deleted only after a successful write.
+- **Lazy folder creation** — destination folders are only created on the filesystem at the moment a file is actually moved into them. No empty folders are ever created speculatively, even when a video destination is mirrored from a photo destination.
+- **Progress bar** — the Confirm & Move button shows an animated progress bar with a file count summary while the execute request is in flight.
 
 ### Infrastructure
 - **No Docker required on your desktop** — the GitHub Actions CI/CD pipeline builds and publishes the `linux/amd64` image on every push to `main`.
@@ -61,11 +65,11 @@ Android phone  ──►  Synology backup folder  ──►  Photo Backup Organi
 
 1. Your phone's backup app (e.g. Synology Photos, FolderSync) continuously syncs new media to a dedicated per-device folder on the NAS.
 2. You open the Photo Backup Organizer web UI and press **Scan** to discover all unprocessed files.
-3. Files are grouped by device and capture date. Add one or more destination folders in the right-hand panel, then drag cards onto them to assign:
-   - A folder you pick from the photos/videos library (e.g. `/photos/2026 Amsterdam/`)
-   - A brand-new folder you name inline (created on the server immediately)
+3. Files are grouped by device and capture date. Add one or more destination folders in the right-hand panel by navigating the library folder tree and selecting a folder (or creating a new one inline at any nesting level):
+   - A folder you navigate to in the photos/videos library tree
+   - A brand-new folder you create inline (created on the server only when a file is actually moved into it)
 4. Press **Preview changes (dry-run)** to see exactly what will happen — no files are moved yet.
-5. Review the dry-run table and press **Confirm & Move** to execute. Files are copied to the destination, then deleted from the source only after a successful write.
+5. Review the dry-run table and press **Confirm & Move** to execute. A progress bar shows the move in flight. Files are copied to the destination, then deleted from the source only after a successful write.
 6. Already-processed files are remembered in an SQLite database and never re-presented to you.
 
 ---
@@ -442,21 +446,22 @@ The **Review** page shows all unprocessed files as a draggable tile grid.
 
 **Destinations panel (right column)**
 
-1. From the **Photo folder** dropdown, select an existing folder in your photos library — or choose "＋ Create new folder…" and type a name.  
-2. By default the same folder name is used in the videos library (**Same folder in videos library** checkbox). Uncheck it to pick an independent video path.  
-3. Click **+ Add destination** to add the zone to your panel. Destinations are saved in the browser (`localStorage`) and persist across page reloads.  
-4. Use the **×** button on any zone to remove it; files on disk are not affected.
-
-**Working with media cards**
+1. In the **Photo destination** tree, expand folders to navigate the library. Click any folder to select it as the destination — the relative path (e.g. `2026/Holidays`) is shown as the zone label.
+2. To create a new folder, use the **＋** input that appears at the bottom of each expanded folder. You can immediately create subfolders inside a newly created folder.
+3. By default the same relative path is used in the videos library (**Same folder in videos library** checkbox). Uncheck it to navigate an independent video path.
+4. Click **+ Add destination** to add the zone to your panel. Destinations are saved in the browser (`localStorage`) and persist across page reloads.
+5. Use the **×** button on any zone to remove it; files on disk are not affected.
+6. Each zone badge shows the current file counts: `📸 47  🏅 12` for existing content, or `📸 47+3  🏅 12+1` when files are staged.
 
 - **Source filter** dropdown — show only files from one device.
 - **Sort** dropdown — order cards by date ascending, date descending, or location A–Z.
 - Click a card to select it (Shift+Click for range, Ctrl/Cmd+Click to toggle).
 - **Delete selected** (🗑 button, top-right) — permanently deletes the selected source files after a confirmation prompt. Use this to remove unwanted duplicates or junk before moving.
 - Drag one or more selected cards onto a destination zone to assign them. Photos go to the photos path; videos go to the videos path.
-- Double-click a card to open it full-screen. Use the **‹ / ›** arrows or ← / → keyboard keys to navigate without closing the lightbox.
+- Double-click a card to open it full-screen. Use the **‹ / ›** arrows or ← / → keyboard keys to navigate without closing the lightbox. Press the **🗑** button in the lightbox toolbar to delete the currently open file; the lightbox automatically advances to the next file.
 - Cards with GPS data show a `⊙ City, Country` label; the location also appears in the lightbox caption.
 - Use the **Grid size** slider to change the number of columns (2–10).
+- The top bar with the Delete, Dry-run, and Move buttons stays pinned at the top of the screen while scrolling.
 
 #### Step 3 – Preview changes (dry-run)
 
@@ -465,15 +470,15 @@ Click **Preview changes (dry-run)**. No files are moved. A summary table shows:
 | Badge | Meaning |
 |---|---|
 | 🟢 move | File will be moved as-is |
-| 🟡 rename | A non-duplicate filename collision exists; a numeric suffix (`_1`, `_2`, …) will be appended |
-| 🔴 skip (duplicate) | An identical file (same size + SHA-256) already exists at the destination |
+| � skip (duplicate) | An identical file (same size + SHA-256) already exists at the destination |
+| 🔴 skip | A file with the same name already exists at the destination (not a duplicate) — move is skipped to prevent overwriting |
 | ❌ error | Something unexpected would prevent the move |
 
 #### Step 4 – Confirm & Move
 
-If the dry-run looks correct, press **Confirm & Move** to execute. Each file is:
+If the dry-run looks correct, press **Confirm & Move** to execute. An animated progress bar is shown while the operation runs. Each file is:
 
-1. Copied to the destination using `shutil.copy2` (preserving timestamps and metadata).
+1. Copied to the destination using `shutil.copy2` (preserving timestamps and metadata). The destination folder is created at this point if it does not already exist.
 2. Deleted from the source **only after** the copy completes successfully.
 
 #### Step 5 – Log
@@ -498,7 +503,9 @@ The application also exposes a JSON API (documented at `http://<NAS_IP>:9121/doc
 | `GET` | `/api/scan/folders` | List scannable sub-folders per device |
 | `GET` | `/api/geocode` | Reverse-geocode GPS coords (`?lat=&lon=`) |
 | `GET` | `/api/destinations/folder-children` | List immediate sub-folders at any depth in the library tree (`?root=photos\|videos&path=rel/path`) |
+| `GET` | `/api/destinations/folder-count` | Count existing files at a library path (`?root=photos\|videos&path=rel/path`) |
 | `POST` | `/api/destinations/ensure-folder` | Create a folder at an arbitrary relative path — supports nesting with `/` (body: `{root, name}`) |
+| `GET` | `/api/move/log/rows` | Recent audit log as HTML rows (used by HTMX log page) |
 | `GET` | `/api/destinations/categories` | List event categories (legacy) |
 | `GET` | `/api/destinations/events` | List event folders in a category (legacy) |
 | `POST` | `/api/destinations/events` | Create a new event folder (legacy) |

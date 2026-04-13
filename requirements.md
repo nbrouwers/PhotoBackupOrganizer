@@ -29,41 +29,54 @@ A Python application running in a Docker container on a Synology NAS. It moves p
 ### 3.2 Destination Management
 
 - **FR-05** The application shall maintain a configured photos library root and a separate videos library root.
-- **FR-06** The application shall support two destination types:
-  - **Event folder** – a named folder nested under a category inside the library (e.g. `/photos/holidays/2026 amsterdam/`).
-  - **Quarterly folder** – an auto-generated folder based on the media's capture date, following the pattern `<library-root>/<year>/Q<quarter>/` (e.g. `/photos/2026/Q1/`).
-- **FR-07** The application shall be able to create new event folders on demand, including any required intermediate category folders (e.g. `holidays/`, `birthdays/`).
-- **FR-08** Quarterly folders shall be created automatically if they do not yet exist when files are moved into them.
+- **FR-06** The application shall allow the user to select any existing folder within the library as a destination, navigated via a hierarchical tree that loads children lazily on expansion.
+- **FR-07** The application shall allow the user to create new folders at any nesting depth within the library, including immediately inside a just-created folder.
+- **FR-08** New destination folders shall only be created on the filesystem at the moment a file is actually moved into them; no speculative or empty folders shall be created in advance.
+- **FR-09†** The application shall display, for each destination zone, how many files already exist in the target folder (separately for photos and videos) and how many files are currently staged to be moved there.
+- **FR-10†** Destination zone selections shall be persisted in the browser (`localStorage`) and restored on the next page load.
+
+*† New requirement added during implementation.*
 
 ### 3.3 File Processing
 
-- **FR-09** The application shall move files from the backup location to the chosen destination (move, not copy, to avoid duplicate storage).
-- **FR-10** The application shall read the capture date/time from file metadata (EXIF data for photos; container metadata for videos) with fallback to the file's last-modified date.
-- **FR-11** The application shall detect duplicate files at the destination before moving and skip or flag them rather than overwriting existing files.
-- **FR-12** The application shall preserve original filenames. When a filename collision exists that is not a duplicate, it shall append a numeric suffix to avoid overwriting (e.g. `IMG_1234_1.jpg`).
-- **FR-13** The application shall log every file operation (moved, skipped, or error) with source path, destination path, and reason.
+- **FR-11** The application shall move files from the backup location to the chosen destination (move, not copy, to avoid duplicate storage).
+- **FR-12** The application shall read the capture date/time from file metadata (EXIF data for photos; container metadata for videos) with fallback to the file's last-modified date.
+- **FR-13** The application shall detect duplicate files at the destination before moving (same size + SHA-256 hash) and skip them rather than overwriting existing files.
+- **FR-14** The application shall skip a move when a file with the same filename already exists at the destination but is not a byte-for-byte duplicate, preventing silent data loss.
+- **FR-15** The application shall preserve original filenames. Rename-on-collision is not performed; a same-name conflict results in a skip (see FR-14).
+- **FR-16** The application shall log every file operation (moved, skipped, or error) with source path, destination path, and reason.
+- **FR-17** The application shall allow the user to permanently delete source files from within the web UI, individually or in bulk, after an explicit confirmation step.
+- **FR-18†** Deletion shall also be available from within the full-screen media preview, with automatic advancement to the next file after deletion.
+
+*† New requirement added during implementation.*
 
 ### 3.4 User Workflow
 
-- **FR-14** The application shall provide a web-based user interface accessible from within the local network (no public internet exposure required).
-- **FR-15** The UI shall present unprocessed media grouped by source device and capture date, allowing the user to review them before any files are moved.
-- **FR-16** The UI shall allow the user to assign a group of files (e.g. all files from a specific date range) to either an event folder or the quarterly fallback.
-- **FR-17** The UI shall allow the user to select individual files and override the group assignment for them.
-- **FR-18** The UI shall allow the user to browse and select existing event folders as a destination, or create a new event folder inline.
-- **FR-19** The UI shall display a thumbnail preview for photos and a poster-frame preview for videos.
-- **FR-20** The UI shall provide a confirmation step before files are physically moved.
-- **FR-21** The UI shall display a processing log after each batch move operation.
+- **FR-19** The application shall provide a web-based user interface accessible from within the local network (no public internet exposure required).
+- **FR-20** The UI shall present unprocessed media grouped by source device and capture date, allowing the user to review them before any files are moved.
+- **FR-21** The UI shall allow the user to assign individual files to a destination by dragging them onto a destination zone. Multi-select (Shift+Click range, Ctrl+Click toggle) enables batch assignment.
+- **FR-22** The UI shall allow the user to filter visible media cards by source device and sort them by date or GPS location.
+- **FR-23** The UI shall allow the user to browse and select existing library folders as destinations via a lazy-loading tree, or create new folders at any depth inline.
+- **FR-24** The UI shall display a thumbnail preview for photos and a poster-frame preview for videos.
+- **FR-25** The UI shall support full-screen preview of individual media items with prev/next navigation and an inline delete action.
+- **FR-26** The UI shall provide a confirmation step before files are physically moved, including a dry-run preview table.
+- **FR-27** The UI shall display move progress during execution and a processing log after each batch move operation.
+- **FR-28†** The UI action buttons (Delete, Dry-run, Move) shall remain visible while the user scrolls the media grid.
+- **FR-29†** Scan operations shall be logged to the audit log (start, completion, error).
+- **FR-30†** The audit log shall be viewable in the web UI as a live-updating HTML table.
+
+*† New requirement added during implementation.*
 
 ### 3.5 Configuration
 
-- **FR-22** All configurable values shall be stored in a single configuration file (YAML or TOML) mounted into the container at a well-known path.
-- **FR-23** The configuration shall support:
+- **FR-31** All configurable values shall be stored in a single configuration file (YAML or TOML) mounted into the container at a well-known path.
+- **FR-32** The configuration shall support:
   - A list of backup source folders, each with a human-readable device label.
   - The photos library root path.
   - The videos library root path.
   - Supported photo and video file extensions (with sensible defaults).
   - The port on which the web UI is served.
-- **FR-24** Configuration changes shall take effect on application restart without rebuilding the container image.
+- **FR-33** Configuration changes shall take effect on application restart without rebuilding the container image.
 
 ---
 
