@@ -171,7 +171,7 @@ The original stack is fully compatible with Synology NAS / DSM 7.x, with two imp
     - **First-use onboarding hint**: `#dest-empty` is a styled `div` (dashed blue border) explaining pick-a-folder → Add destination; hidden as soon as the first zone is added.
     - Bulk delete with confirmation.
     - **Keyboard zone shortcuts (1–9)**: pressing a digit assigns all selected cards to the matching zone; zone badges display their shortcut number.
-    - **Date-group headers**: each device·date group has a `Select all` button that selects every visible card in that group.
+    - **Date-group headers**: each device·date group has a `<label><input type="checkbox">` control; checking selects all visible cards in the group, unchecking deselects them; the checkbox shows indeterminate state when only some are selected. A `syncGroupCheckboxes()` helper keeps all group checkboxes in sync after every selection change via `syncDeleteBtn()` and at the end of `applyFilterSort()`.
     - **Ctrl+Z undo**: all assignment paths (drag-drop, keyboard, quick-assign, badge unassign) funnel through `_applyAssignments`/`pushUndo`; up to 50 undo levels.
     - **Quick-assign button + `Q` shortcut**: appears in the top bar after the first assignment; re-assigns selected cards to the last-used zone.
 21. **`log.html`** — audit log table, live-updated via HTMX polling of `/api/move/log/rows`.

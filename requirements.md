@@ -58,7 +58,7 @@ A Python application running in a Docker container on a Synology NAS. It moves p
 - **FR-20** The UI shall present unprocessed media grouped by source device and capture date, allowing the user to review them before any files are moved.
 - **FR-21** The UI shall allow the user to assign individual files to a destination by dragging them onto a destination zone. Multi-select (Shift+Click range, Ctrl+Click toggle) enables batch assignment.
 - **FR-21a†** The UI shall allow the user to assign the selected file(s) to a destination zone by pressing the corresponding digit key (1–9); each zone displays its shortcut number in a badge.
-- **FR-21b†** Each device-·-date group header in the media grid shall provide a **Select all** button that selects all visible files in that group.
+- **FR-21b†** Each device-·-date group header in the media grid shall provide a checkbox control that selects all visible files in that group when checked, deselects them all when unchecked, and shows an indeterminate state when only some files in the group are selected.
 - **FR-21c†** The UI shall support undoing the most-recently-applied assignment batch via Ctrl/Cmd+Z (up to 50 levels); cards are restored to their previous zone or to unassigned.
 - **FR-21d†** After the first assignment action the UI shall show a **Quick-assign** button (and respond to the `Q` key) that re-assigns the selected cards to the last-used destination zone.
 - **FR-22** The UI shall allow the user to filter visible media cards by source device and sort them by date or GPS location. The selected filter and sort order shall be persisted in `localStorage` (`pbo_filter_sort_v1`) and restored on subsequent page loads.

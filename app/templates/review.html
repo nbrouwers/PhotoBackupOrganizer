@@ -112,6 +112,17 @@
   }
   .group-header-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .group-header .btn  { padding: .15rem .55rem; font-size: .72rem; flex-shrink: 0; }
+  .group-select-all-lbl {
+    display: flex; align-items: center; gap: .3rem;
+    font-size: .72rem; color: var(--clr-text-3);
+    cursor: pointer; flex-shrink: 0; user-select: none;
+  }
+  .group-chk {
+    width: 1rem; height: 1rem;
+    cursor: pointer;
+    accent-color: var(--clr-primary);
+    flex-shrink: 0;
+  }
   /* ── Zone shortcut index badge ── */
   .zone-index {
     display: inline-block;
@@ -360,10 +371,14 @@ const VIDEOS_ROOT = {{ videos_root | tojson }};
                  data-date="{{ dg.date }}">
               <span class="group-header-label">{{ device.label }} · {{ dg.date }}</span>
               <span style="opacity:.65;font-weight:400;white-space:nowrap;">{{ dg.files | length }} file{{ 's' if dg.files | length != 1 }}</span>
-              <button class="btn btn-secondary btn-sm"
-                      data-device="{{ device.label }}"
-                      data-date="{{ dg.date }}"
-                      onclick="selectGroup(this.dataset.device, this.dataset.date)">Select all</button>
+              <label class="group-select-all-lbl" title="Select all · click again to deselect all">
+                <input type="checkbox" class="group-chk"
+                       data-device="{{ device.label }}"
+                       data-date="{{ dg.date }}"
+                       onchange="toggleGroupSelection(this)"
+                       aria-label="Select or deselect all files in this group">
+                Select all
+              </label>
             </div>
             {% for f in dg.files %}
             <div class="file-card"
@@ -533,6 +548,7 @@ function applyFilterSort() {
     }
     grid.appendChild(c);
   }
+  syncGroupCheckboxes();
   updateCounts();
 }
 
@@ -543,6 +559,18 @@ function cardBySrc(src) { return document.querySelector(`.file-card[data-src="${
 function syncDeleteBtn() {
   const btn = document.getElementById('delete-btn');
   if (btn) btn.disabled = selected.size === 0;
+  syncGroupCheckboxes();
+}
+
+function syncGroupCheckboxes() {
+  for (const chk of document.querySelectorAll('.group-chk')) {
+    const { device, date } = chk.dataset;
+    const group = visibleCards().filter(c => c.dataset.device === device && c.dataset.date === date);
+    if (!group.length) { chk.checked = false; chk.indeterminate = false; continue; }
+    const selCount = group.filter(c => selected.has(c.dataset.src)).length;
+    chk.indeterminate = selCount > 0 && selCount < group.length;
+    chk.checked       = selCount === group.length;
+  }
 }
 
 function clearSelection() {
@@ -1412,13 +1440,20 @@ function undoLastAssignment() {
   updateCounts();
 }
 
-// ── Group "select all" ───────────────────────────────────────────────────────
-function selectGroup(device, date) {
-  for (const card of visibleCards()) {
-    if (card.dataset.device === device && card.dataset.date === date) {
+// ── Group select / deselect all ──────────────────────────────────────────────
+function toggleGroupSelection(chk) {
+  const { device, date } = chk.dataset;
+  const group = visibleCards().filter(c => c.dataset.device === device && c.dataset.date === date);
+  if (chk.checked) {
+    for (const card of group) {
       selected.add(card.dataset.src);
       card.classList.add('selected');
-      _lastClickedSrc = card.dataset.src;
+    }
+    if (group.length) _lastClickedSrc = group[group.length - 1].dataset.src;
+  } else {
+    for (const card of group) {
+      selected.delete(card.dataset.src);
+      card.classList.remove('selected');
     }
   }
   syncDeleteBtn();
