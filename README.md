@@ -34,6 +34,10 @@ A Python web application that runs in a Docker container on a Synology NAS. It s
 - **Sort** — sort visible cards by date ascending, date descending, or location A–Z.
 - **Sticky top bar** — the Delete, Dry-run, and Move buttons stay pinned at the top of the screen while scrolling the media grid, so they are always accessible.
 - **Drag-and-drop assignment** — drag one or more file cards onto a destination zone. Multi-select with Shift+Click or Ctrl+Click before dragging. Photos route to the photos library path; videos route to the videos library path automatically.
+- **Keyboard zone shortcuts** — press `1`–`9` to instantly assign the selected card(s) to destination zone 1–9 (the zone number is shown in the badge). No dragging required; combine with group select to file a whole day's photos in two keystrokes.
+- **Date-group select all** — every device · date group header has a **Select all** button that selects every visible card in that group in one click.
+- **Undo last assignment** — press `Ctrl+Z` (or `Cmd+Z`) to detach the most-recently-assigned batch from its zone and restore each card to its previous state (or unassigned). Up to 50 operations are tracked. Badge unassign clicks are also undoable.
+- **Quick-assign to last-used zone** — once you have assigned at least one file, a **▷ Zone name** button appears in the top bar. Click it (or press `Q`) to assign all selected cards to the same destination without using the mouse at all.
 - **Delete selected** — select one or more cards and click 🗑 Delete to permanently remove the source files from the backup folder. A confirmation dialog is shown before any file is deleted.
 - **Video play icon** — video thumbnails are decorated with a `▶` overlay badge so they are instantly distinguishable from photos.
 - **Instant video preview for H.264/VP8/VP9/AV1 files** — clicking a video card opens it in the lightbox immediately with no transcoding wait. ffprobe checks the container codec; browser-native videos are streamed directly from the source. Only HEVC/H.265 files are transcoded to H.264 on first open (cached afterwards).

@@ -156,14 +156,18 @@ The original stack is fully compatible with Synology NAS / DSM 7.x, with two imp
 
 19. **`index.html`** — scan trigger with HTMX polling; two-phase progress bar; scan button race-condition fix: polls `/api/scan/status` until `running=True` before loading progress partial.
 20. **`review.html`** — full drag-and-drop review page:
-    - Sticky top bar with Delete, Dry-run, and Move buttons visible while scrolling.
+    - Sticky top bar with Delete, Quick-assign, Dry-run, and Move buttons visible while scrolling.
     - `FolderPicker` class: lazy-expanding tree, inline folder creation at any depth, selection tracking, localStorage persistence.
-    - Destination zone badge: shows `📸 existing+pending  🏅 existing+pending` counts, fetched asynchronously.
+    - Destination zone badge: shows `📸 existing+pending  🏂 existing+pending` counts, fetched asynchronously.
     - Dry-run result rendered inline with Confirm & Move button and animated progress bar.
     - Full-screen lightbox with ‹/› navigation, keyboard shortcuts, and 🗑 delete button.
     - Source filter dropdown and sort controls.
     - Tile-size slider (2–10 columns).
     - Bulk delete with confirmation.
+    - **Keyboard zone shortcuts (1–9)**: pressing a digit assigns all selected cards to the matching zone; zone badges display their shortcut number.
+    - **Date-group headers**: each device·date group has a `Select all` button that selects every visible card in that group.
+    - **Ctrl+Z undo**: all assignment paths (drag-drop, keyboard, quick-assign, badge unassign) funnel through `_applyAssignments`/`pushUndo`; up to 50 undo levels.
+    - **Quick-assign button + `Q` shortcut**: appears in the top bar after the first assignment; re-assigns selected cards to the last-used zone.
 21. **`log.html`** — audit log table, live-updated via HTMX polling of `/api/move/log/rows`.
 22. `confirm.html` retained as a legacy stub; dry-run confirmation is now inline in `review.html`.
 
@@ -194,6 +198,7 @@ The original stack is fully compatible with Synology NAS / DSM 7.x, with two imp
 - **Lazy folder creation** — destination folders are only created at move time, never speculatively. Preserves a clean library even when operations are cancelled.
 - **`FolderPicker` tree UI** — lazy-loading JS class replaces flat dropdown; supports arbitrary nesting, inline creation at any depth, and re-expansion of newly created nodes.
 - **Destination file counts** — `GET /api/destinations/folder-count` drives the zone badge; gives immediate context about how full a destination already is.
+- **Single assignment engine (`_applyAssignments`)** — all assignment paths (drag-drop, keyboard shortcut, quick-assign) share one function so undo snapshots, zone counts, and last-used tracking are always consistent.
 - **Audit log extended** — scan start/complete/error and delete events are all written via `write_log_entry()`, alongside move events.
 - **SQLite** — efficient `is_processed()` lookups; persistent across container restarts.
 - **HTMX + Jinja2** — no JS build pipeline; lightweight.

@@ -95,6 +95,36 @@
   .dest-badge::before { content: "→ "; }
   .file-card.assigned .dest-badge { display: block; }
   .dest-badge:hover { background: var(--clr-danger-lt); color: var(--clr-danger); }
+  /* ── Date-group headers ── */
+  .group-header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .3rem .2rem .25rem .1rem;
+    margin-top: .55rem;
+    border-bottom: 1px solid var(--clr-border);
+    font-size: .78rem;
+    color: var(--clr-text-3);
+    font-weight: 600;
+  }
+  .group-header-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .group-header .btn  { padding: .15rem .55rem; font-size: .72rem; flex-shrink: 0; }
+  /* ── Zone shortcut index badge ── */
+  .zone-index {
+    display: inline-block;
+    font-size: .62rem;
+    font-weight: 700;
+    background: var(--clr-primary);
+    color: #fff;
+    border-radius: 3px;
+    padding: .06rem .38rem;
+    flex-shrink: 0;
+    cursor: default;
+    letter-spacing: .02em;
+    min-width: 1.1rem;
+    text-align: center;
+  }
   /* ── Destination panel ── fixed right column */
   #dest-panel {
     flex: 0 0 320px;       /* never grows or shrinks */
@@ -305,6 +335,7 @@ const VIDEOS_ROOT = {{ videos_root | tojson }};
   </div>
   <div id="top-bar-right">
     <button class="btn btn-danger btn-sm" id="delete-btn" onclick="deleteSelected()" disabled title="Delete selected files from disk">🗑 Delete</button>
+    <button class="btn btn-secondary btn-sm" id="quick-assign-btn" onclick="quickAssign()" style="display:none;" title="Assign selected to last-used destination (Q)">▷ —</button>
     <button class="btn btn-primary" onclick="submitForm('dry-run')">🔍 Dry-run preview</button>
     <button class="btn btn-success" onclick="submitForm('execute')">▶ Move now</button>
   </div>
@@ -317,11 +348,21 @@ const VIDEOS_ROOT = {{ videos_root | tojson }};
     <div class="card" style="padding:1rem;">
       <h2 style="margin-bottom:.6rem;">
         <span class="h2-icon">◉</span> Media to move
-        <span style="font-size:.82rem;font-weight:400;color:var(--clr-text-3);margin-left:.3rem;">— click · shift+click to range · drag to assign · double-click to preview</span>
+        <span style="font-size:.82rem;font-weight:400;color:var(--clr-text-3);margin-left:.3rem;">— click · shift+click · drag or press <kbd style="font-size:.72rem;background:var(--clr-surface-2);border:1px solid var(--clr-border);border-radius:3px;padding:.05rem .3rem;">1</kbd>–<kbd style="font-size:.72rem;background:var(--clr-surface-2);border:1px solid var(--clr-border);border-radius:3px;padding:.05rem .3rem;">9</kbd> to assign · Ctrl+Z undo · double-click to preview</span>
       </h2>
       <div id="files-grid">
         {% for device in devices %}
           {% for dg in device.date_groups %}
+            <div class="group-header"
+                 data-device="{{ device.label }}"
+                 data-date="{{ dg.date }}">
+              <span class="group-header-label">{{ device.label }} · {{ dg.date }}</span>
+              <span style="opacity:.65;font-weight:400;white-space:nowrap;">{{ dg.files | length }} file{{ 's' if dg.files | length != 1 }}</span>
+              <button class="btn btn-secondary btn-sm"
+                      data-device="{{ device.label }}"
+                      data-date="{{ dg.date }}"
+                      onclick="selectGroup(this.dataset.device, this.dataset.date)">Select all</button>
+            </div>
             {% for f in dg.files %}
             <div class="file-card"
                  draggable="true"
@@ -394,13 +435,15 @@ function setGridCols(n) {
 }
 
 // ── State ────────────────────────────────────────────────────────────────────
-const assignments = new Map(); // src_path → { destDir, destLabel }
+const assignments = new Map(); // src_path → { destDir, destLabel, zoneEl }
 const selected    = new Set(); // src_path strings currently selected
 let _lastClickedSrc = null;   // for shift+click range
 let _dragSrcs       = [];     // src_paths being dragged (1 or many)
 let _lbSrc          = null;   // src currently open in lightbox
 let _photoTree      = null;   // FolderPicker for photos
 let _videoTree      = null;   // FolderPicker for videos
+let _lastUsedZone   = null;   // most-recently-used zone (quick-assign)
+const _undoStack    = [];     // [{srcPath, prevAssignment}] entries, max 50
 
 // ── Filter / Sort ─────────────────────────────────────────────────────────────
 function applyFilterSort() {
@@ -415,7 +458,7 @@ function applyFilterSort() {
     c.style.display = visible ? '' : 'none';
   }
 
-  // Sort visible cards inside the grid
+  // Sort visible cards
   const visible = cards.filter(c => c.style.display !== 'none');
   visible.sort((a, b) => {
     if (sort === 'date-asc')  return (a.dataset.date || '').localeCompare(b.dataset.date || '');
@@ -427,7 +470,26 @@ function applyFilterSort() {
     }
     return 0;
   });
-  for (const c of visible) grid.appendChild(c); // move to end in sorted order
+
+  // Re-insert cards and group headers together so each header precedes its
+  // group's first visible card. Headers are suppressed for location sort.
+  const showHeaders = sort !== 'location';
+  let lastGroupKey  = null;
+  const allHeaders  = Array.from(grid.querySelectorAll('.group-header'));
+  for (const h of allHeaders) h.remove(); // detach from grid temporarily
+  for (const c of visible) {
+    if (showHeaders) {
+      const key = c.dataset.device + '|' + c.dataset.date;
+      if (key !== lastGroupKey) {
+        const header = allHeaders.find(
+          h => h.dataset.device === c.dataset.device && h.dataset.date === c.dataset.date
+        );
+        if (header) grid.appendChild(header);
+        lastGroupKey = key;
+      }
+    }
+    grid.appendChild(c);
+  }
   updateCounts();
 }
 
@@ -604,10 +666,29 @@ function closeLightboxIfBg(e) {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeLightbox();
+  if (e.key === 'Escape') { closeLightbox(); return; }
   if (document.getElementById('lightbox').style.display === 'flex') {
     if (e.key === 'ArrowLeft')  lbStep(-1);
     if (e.key === 'ArrowRight') lbStep(1);
+    return;
+  }
+  // Global shortcuts — skip when focus is inside an input/textarea
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+  // Ctrl/Cmd+Z — undo last assignment
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undoLastAssignment(); return; }
+
+  // Q — quick-assign to last-used zone
+  if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'q' || e.key === 'Q')) {
+    e.preventDefault(); quickAssign(); return;
+  }
+
+  // 1–9 — assign selected cards to numbered destination zone
+  const digit = parseInt(e.key, 10);
+  if (!isNaN(digit) && digit >= 1 && digit <= 9 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const zones = Array.from(document.querySelectorAll('#dest-zones .dest-zone'));
+    const zone  = zones[digit - 1];
+    if (zone && selected.size > 0) { e.preventDefault(); assignSelectedToZone(zone); }
   }
 });
 
@@ -630,8 +711,11 @@ function addDestZone(photoDir, videoDir, label, photoRel = '', videoRel = '') {
   const titleAttr = 'Photo: ' + photoDir + (videoDir && videoDir !== photoDir ? '\nVideo: ' + videoDir : '');
   zone.innerHTML = `
     <div class="dest-zone-header">
-      <span title="${escHtml(titleAttr)}">${escHtml(label)}</span>
-      <div style="display:flex;align-items:center;gap:.4rem;">
+      <div style="display:flex;align-items:center;gap:.35rem;min-width:0;overflow:hidden;">
+        <span class="zone-index" title=""></span>
+        <span class="zone-label" title="${escHtml(titleAttr)}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(label)}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:.4rem;flex-shrink:0;">
         <span class="dest-count">…</span>
         <button class="dest-remove" onclick="removeDestZone(this)" title="Remove destination">&times;</button>
       </div>
@@ -640,6 +724,7 @@ function addDestZone(photoDir, videoDir, label, photoRel = '', videoRel = '') {
   zone.addEventListener('dragleave', ()  => zone.classList.remove('drag-over'));
   zone.addEventListener('drop',      e  => { e.preventDefault(); zone.classList.remove('drag-over'); handleDrop(zone, e); });
   container.appendChild(zone);
+  refreshZoneIndices();
   fetchZoneExistingCounts(zone);
   saveZones();
 }
@@ -667,6 +752,8 @@ function removeDestZone(btn) {
   saveZones();
   syncDeleteBtn();
   updateCounts();
+  refreshZoneIndices();
+  updateQuickAssignBtn();
 }
 
 // ── Folder tree picker ────────────────────────────────────────────────────────
@@ -880,7 +967,7 @@ function saveZones() {
     videoDir: z.dataset.videoDir,
     photoRel: z.dataset.photoRel || '',
     videoRel: z.dataset.videoRel || '',
-    label: z.querySelector('.dest-zone-header span').textContent,
+    label: z.querySelector('.zone-label').textContent,
   }));
   try { localStorage.setItem(_LS_KEY, JSON.stringify(zones)); } catch {}
 }
@@ -966,6 +1053,7 @@ document.addEventListener('DOMContentLoaded', () => {
   _photoTree = new FolderPicker('photo-tree', 'photo-tree-sel', 'photos', PHOTOS_ROOT);
   _videoTree = new FolderPicker('video-tree', 'video-tree-sel', 'videos', VIDEOS_ROOT);
   loadSavedZones();
+  refreshZoneIndices();
   loadGPSLocations();
   updateCounts();
 });
@@ -973,33 +1061,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function handleDrop(zone, e) {
   const srcs = _dragSrcs.length ? _dragSrcs : [e.dataTransfer.getData('text/plain')];
   if (!srcs.length || !srcs[0]) return;
-  const destLabel = zone.querySelector('.dest-zone-header span').textContent;
-
-  for (const srcPath of srcs) {
-    // Determine media type to track photo/video pending counts separately
-    const card     = cardBySrc(srcPath);
-    const isVideo  = card?.dataset.media === 'video';
-    const countKey = isVideo ? 'pendingVideos' : 'pendingPhotos';
-
-    // Remove from previous zone
-    const prev = assignments.get(srcPath);
-    if (prev?.zoneEl) {
-      prev.zoneEl.dataset[countKey] = Math.max(0, parseInt(prev.zoneEl.dataset[countKey] || '0') - 1);
-      updateZoneCount(prev.zoneEl);
-    }
-
-    // Pick dest dir based on media type (photos vs videos)
-    const destDir = isVideo ? (zone.dataset.videoDir || zone.dataset.photoDir) : zone.dataset.photoDir;
-
-    assignments.set(srcPath, { destDir, destLabel, zoneEl: zone });
-    if (card) {
-      card.classList.add('assigned');
-      card.querySelector('.dest-badge').textContent = destLabel;
-    }
-    zone.dataset[countKey] = parseInt(zone.dataset[countKey] || '0') + 1;
-  }
-  updateZoneCount(zone);
-  updateCounts();
+  _applyAssignments(zone, srcs);
 }
 
 function unassign(card) {
@@ -1007,6 +1069,8 @@ function unassign(card) {
   const isVideo  = card.dataset.media === 'video';
   const countKey = isVideo ? 'pendingVideos' : 'pendingPhotos';
   const prev     = assignments.get(srcPath);
+  // Snapshot BEFORE mutating so Ctrl+Z can restore
+  if (prev) pushUndo([{ srcPath, prevAssignment: { ...prev } }]);
   if (prev?.zoneEl) {
     prev.zoneEl.dataset[countKey] = Math.max(0, parseInt(prev.zoneEl.dataset[countKey] || '0') - 1);
     updateZoneCount(prev.zoneEl);
@@ -1216,6 +1280,140 @@ async function deleteSelected() {
   if (failed > 0) {
     alert(`Deleted ${data.deleted} of ${paths.length} file(s).\n${failed} could not be deleted — see the browser console for details.`);
   }
+}
+
+// ── Core assignment engine ───────────────────────────────────────────────────
+// All assignment paths (drag-drop, keyboard shortcut, quick-assign) funnel
+// through here so undo snapshots, zone counts, and last-used tracking are
+// always consistent.
+function _applyAssignments(zone, srcPaths) {
+  if (!srcPaths.length) return;
+  const destLabel = zone.querySelector('.zone-label').textContent;
+
+  // Push one undo snapshot for the whole batch before mutating state
+  const snapshot = srcPaths
+    .filter(s => cardBySrc(s))
+    .map(s => ({ srcPath: s, prevAssignment: assignments.has(s) ? { ...assignments.get(s) } : null }));
+  if (snapshot.length) pushUndo(snapshot);
+
+  for (const srcPath of srcPaths) {
+    const card = cardBySrc(srcPath);
+    if (!card) continue;
+    const isVideo  = card.dataset.media === 'video';
+    const countKey = isVideo ? 'pendingVideos' : 'pendingPhotos';
+
+    // Decrement previous zone's pending count
+    const prev = assignments.get(srcPath);
+    if (prev?.zoneEl) {
+      prev.zoneEl.dataset[countKey] = Math.max(0, parseInt(prev.zoneEl.dataset[countKey] || '0') - 1);
+      updateZoneCount(prev.zoneEl);
+    }
+
+    const destDir = isVideo ? (zone.dataset.videoDir || zone.dataset.photoDir) : zone.dataset.photoDir;
+    assignments.set(srcPath, { destDir, destLabel, zoneEl: zone });
+    card.classList.add('assigned');
+    card.querySelector('.dest-badge').textContent = destLabel;
+    zone.dataset[countKey] = parseInt(zone.dataset[countKey] || '0') + 1;
+  }
+  updateZoneCount(zone);
+  updateCounts();
+  _lastUsedZone = zone;
+  updateQuickAssignBtn();
+}
+
+// Assign all currently-selected cards to a zone (keyboard / quick-assign)
+function assignSelectedToZone(zone) {
+  if (!selected.size) return;
+  _applyAssignments(zone, [...selected]);
+}
+
+// ── Undo ─────────────────────────────────────────────────────────────────────
+function pushUndo(snapshot) {
+  _undoStack.push(snapshot);
+  if (_undoStack.length > 50) _undoStack.shift();
+}
+
+function undoLastAssignment() {
+  const entries = _undoStack.pop();
+  if (!entries?.length) return;
+
+  for (const { srcPath, prevAssignment } of entries) {
+    const card = cardBySrc(srcPath);
+    if (!card) continue;
+    const isVideo  = card.dataset.media === 'video';
+    const countKey = isVideo ? 'pendingVideos' : 'pendingPhotos';
+
+    // Remove current assignment
+    const current = assignments.get(srcPath);
+    if (current?.zoneEl) {
+      current.zoneEl.dataset[countKey] = Math.max(0, parseInt(current.zoneEl.dataset[countKey] || '0') - 1);
+      updateZoneCount(current.zoneEl);
+    }
+
+    // Restore previous state (zone may have been removed — check isConnected)
+    if (prevAssignment?.zoneEl?.isConnected) {
+      assignments.set(srcPath, prevAssignment);
+      card.classList.add('assigned');
+      card.querySelector('.dest-badge').textContent = prevAssignment.destLabel;
+      prevAssignment.zoneEl.dataset[countKey] =
+        parseInt(prevAssignment.zoneEl.dataset[countKey] || '0') + 1;
+      updateZoneCount(prevAssignment.zoneEl);
+    } else {
+      assignments.delete(srcPath);
+      card.classList.remove('assigned');
+      card.querySelector('.dest-badge').textContent = '';
+    }
+  }
+  updateCounts();
+}
+
+// ── Group "select all" ───────────────────────────────────────────────────────
+function selectGroup(device, date) {
+  for (const card of visibleCards()) {
+    if (card.dataset.device === device && card.dataset.date === date) {
+      selected.add(card.dataset.src);
+      card.classList.add('selected');
+      _lastClickedSrc = card.dataset.src;
+    }
+  }
+  syncDeleteBtn();
+}
+
+// ── Zone index badges ─────────────────────────────────────────────────────────
+function refreshZoneIndices() {
+  const zones = Array.from(document.querySelectorAll('#dest-zones .dest-zone'));
+  zones.forEach((zone, i) => {
+    const badge = zone.querySelector('.zone-index');
+    if (!badge) return;
+    if (i < 9) {
+      badge.textContent = String(i + 1);
+      badge.style.display = '';
+      badge.title = `Press ${i + 1} to assign selected files here`;
+    } else {
+      badge.style.display = 'none';
+    }
+  });
+}
+
+// ── Quick assign ─────────────────────────────────────────────────────────────
+function updateQuickAssignBtn() {
+  const btn = document.getElementById('quick-assign-btn');
+  if (!btn) return;
+  if (!_lastUsedZone?.isConnected) {
+    _lastUsedZone = null;
+    btn.style.display = 'none';
+    return;
+  }
+  const label = _lastUsedZone.querySelector('.zone-label')?.textContent || '?';
+  btn.style.display = '';
+  btn.textContent = '\u25b7 ' + label;
+  btn.title = 'Quick-assign selected to \u201c' + label + '\u201d  (Q)';
+}
+
+function quickAssign() {
+  if (!_lastUsedZone?.isConnected) { _lastUsedZone = null; updateQuickAssignBtn(); return; }
+  if (!selected.size) return;
+  assignSelectedToZone(_lastUsedZone);
 }
 </script>
 {% endblock %}
