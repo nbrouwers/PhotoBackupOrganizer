@@ -680,7 +680,7 @@ function _renderLightbox(card) {
 function closeLightbox() {
   const body = document.getElementById('lb-body');
   const v = body.querySelector('video');
-  if (v) { v.pause(); v.currentTime = 0; v.src = ''; }
+  if (v) { v.src = ''; v.pause(); }
   body.innerHTML = '';
   document.getElementById('lightbox').style.display = 'none';
 }
