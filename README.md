@@ -22,7 +22,7 @@ A Python web application that runs in a Docker container on a Synology NAS. It s
 
 ### Scan
 - **Selective folder scanning** — expand "Choose folders to scan" to cherry-pick individual sub-folders per device. Uncheck any you want to skip; the rest are scanned normally.
-- **Quarter & date presets** — one-click quarter buttons from current quarter back to Q1 2022 narrow the scan to files modified in that period, drastically reducing scan time on large backup folders. Free-form From/To date fields are also available.
+- **Quarter & date presets** — one-click quarter buttons show only periods with media in your backup folders, making it easy to narrow scans to specific quarters. Free-form From/To date fields are also available.
 - **Two-phase progress bar** — the scanner first counts all candidate files, then processes them one by one. A live progress bar (percentage, current filename, found count) updates every 2 seconds via HTMX polling — no full-page refresh.- **Cancel scan** — a ✕ Cancel button appears inside the live progress panel while a scan is running. Clicking it sets a cancellation flag that the scanner checks between files; the scan stops cleanly after the current file without restarting the server.
 - **Per-device file counts** — the completed-scan banner shows how many new files were found per device (e.g. “Alice’s Phone: 47 | Bob’s Phone: 12”), making it immediately clear whether a device actually synced anything new.- **Detailed logging** — every file examined is logged at DEBUG level; per-device summaries at INFO level.
 - **Automatic skip of processed files** — an SQLite database records every moved file so it is never re-presented on a subsequent scan.
@@ -99,7 +99,7 @@ photo-backup-organizer/
 │   ├── duplicates.py      # SHA-256-based duplicate detection
 │   ├── mover.py           # Dry-run and execute batch move logic
 │   ├── routers/
-│   │   ├── scan.py        # GET/POST /api/scan  GET /api/scan/folders
+│   │   ├── scan.py        # GET/POST /api/scan  GET /api/scan/folders  GET /api/scan/available-quarters
 │   │   ├── destinations.py# /api/destinations
 │   │   ├── move.py        # POST /api/move/dry-run  POST /api/move/execute  POST /api/move/delete
 │   │   └── ui.py          # HTML page routes (Jinja2) + /api/geocode
@@ -513,6 +513,7 @@ The application also exposes a JSON API (documented at `http://<NAS_IP>:9121/doc
 | `POST` | `/api/scan/cancel` | Request cancellation of the running scan |
 | `GET` | `/api/scan/result` | Retrieve last scan result |
 | `GET` | `/api/scan/folders` | List scannable sub-folders per device |
+| `GET` | `/api/scan/available-quarters` | List quarters that contain media in backup folders (returns `{year, quarter}` list) |
 | `GET` | `/api/geocode` | Reverse-geocode GPS coords (`?lat=&lon=`) |
 | `GET` | `/api/destinations/folder-children` | List immediate sub-folders at any depth in the library tree (`?root=photos\|videos&path=rel/path`) |
 | `GET` | `/api/destinations/folder-count` | Count existing files at a library path (`?root=photos\|videos&path=rel/path`) |

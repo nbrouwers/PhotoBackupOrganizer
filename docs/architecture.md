@@ -164,7 +164,7 @@ Two public entry points:
 
 | Router file | Prefix | Key endpoints |
 |---|---|---|
-| `routers/scan.py` | `/api/scan` | `POST /` trigger scan, `GET /status`, `GET /result`, `GET /folders`, `POST /cancel` |
+| `routers/scan.py` | `/api/scan` | `POST /` trigger scan, `GET /status`, `GET /result`, `GET /folders`, `GET /available-quarters`, `POST /cancel` |
 | `routers/destinations.py` | `/api/destinations` | `GET /folder-children`, `GET /folder-count`, `POST /ensure-folder` |
 | `routers/move.py` | `/api/move` | `POST /dry-run`, `POST /execute`, `POST /delete`, `GET /log`, `GET /log/rows` |
 | `routers/ui.py` | `/` | Page routes (Jinja2), `GET /thumbnails`, `GET /video-preview`, `GET /media`, `GET /api/geocode` |

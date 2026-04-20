@@ -253,6 +253,38 @@ async def _scan_device(
     return files, errors
 
 
+def get_available_quarters() -> list[dict[str, object]]:
+    """Return list of quarters that have media files in backup folders.
+
+    Scans all configured device paths and groups files by quarter based on
+    modification time (fast, no metadata extraction). Returns a list of
+    {year, quarter} dicts sorted newest first.
+    """
+    cfg = get_config()
+    quarters_with_files: set[tuple[int, int]] = set()  # (year, quarter)
+
+    for device_cfg in cfg.devices:
+        device_path = Path(device_cfg.path)
+        if not device_path.exists():
+            continue
+
+        for p in device_path.rglob("*"):
+            # Skip Synology internal directories and files
+            if "@eaDir" in p.parts or p.name.startswith("SYNOPHOTO"):
+                continue
+            if not (p.is_file() and p.suffix.lower() in cfg.all_extensions):
+                continue
+
+            mtime = date.fromtimestamp(p.stat().st_mtime)
+            year = mtime.year
+            quarter = (mtime.month - 1) // 3 + 1
+            quarters_with_files.add((year, quarter))
+
+    # Sort by year desc, then quarter desc (newest first)
+    sorted_quarters = sorted(quarters_with_files, key=lambda x: (x[0], x[1]), reverse=True)
+    return [{"year": year, "quarter": q} for year, q in sorted_quarters]
+
+
 def _group_by_date(files: list[MediaFile]) -> list[DateGroup]:
     """Group a flat list of MediaFile objects by capture date."""
     groups: dict[date, DateGroup] = {}

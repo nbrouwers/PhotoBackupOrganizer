@@ -158,7 +158,7 @@ The original stack is fully compatible with Synology NAS / DSM 7.x, with two imp
 
 ### Phase 9 – Web UI
 
-19. **`index.html`** — scan trigger with HTMX polling; two-phase progress bar; quarter preset buttons from current quarter back to Q1 2022; scan button race-condition fix: polls `/api/scan/status` until `running=True` before loading progress partial.
+19. **`index.html`** — scan trigger with HTMX polling; two-phase progress bar; quarter preset buttons dynamically populated from `/api/scan/available-quarters` to show only quarters with media; scan button race-condition fix: polls `/api/scan/status` until `running=True` before loading progress partial.
 20. **`review.html`** — full drag-and-drop review page:
     - Sticky top bar with Delete, Quick-assign, Dry-run, and Move buttons visible while scrolling.
     - `FolderPicker` class: lazy-expanding tree, inline folder creation at any depth, selection tracking, localStorage persistence.

@@ -49,8 +49,6 @@
 (function () {
   const qMonths  = [[1,3],[4,6],[7,9],[10,12]];
   const container = document.getElementById('quarter-presets');
-  let yr = new Date().getFullYear();
-  let q  = Math.ceil((new Date().getMonth() + 1) / 3);
 
   const allBtn = document.createElement('button');
   allBtn.className   = 'btn btn-primary btn-sm';
@@ -58,18 +56,26 @@
   allBtn.onclick     = () => setDateFilter(null, null, allBtn);
   container.appendChild(allBtn);
 
-  while (yr > 2022 || (yr === 2022 && q >= 1)) {
-    const [m1, m2] = qMonths[q - 1];
-    const from = `${yr}-${String(m1).padStart(2,'0')}-01`;
-    const to   = `${yr}-${String(m2).padStart(2,'0')}-${new Date(yr, m2, 0).getDate()}`;
-    const btn  = document.createElement('button');
-    btn.className   = 'btn btn-secondary btn-sm';
-    btn.textContent = `Q${q} ${yr}`;
-    btn.onclick     = () => setDateFilter(from, to, btn);
-    container.appendChild(btn);
-    q--;
-    if (q === 0) { q = 4; yr--; }
-  }
+  // Fetch available quarters from backend and populate buttons
+  fetch('/api/scan/available-quarters')
+    .then(r => r.json())
+    .then(data => {
+      if (!data.quarters || !data.quarters.length) return;
+      
+      // Create a button for each available quarter
+      for (const { year, quarter } of data.quarters) {
+        const qMonthIdx = quarter - 1;  // quarter 1 → index 0
+        const [m1, m2] = qMonths[qMonthIdx];
+        const from = `${year}-${String(m1).padStart(2,'0')}-01`;
+        const to   = `${year}-${String(m2).padStart(2,'0')}-${new Date(year, m2, 0).getDate()}`;
+        const btn  = document.createElement('button');
+        btn.className   = 'btn btn-secondary btn-sm';
+        btn.textContent = `Q${quarter} ${year}`;
+        btn.onclick     = () => setDateFilter(from, to, btn);
+        container.appendChild(btn);
+      }
+    })
+    .catch(err => console.warn('Failed to load available quarters:', err));
 })();
 
 function setDateFilter(from, to, btn) {

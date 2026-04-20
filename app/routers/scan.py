@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from app.config import get_config
 from app.mover import write_log_entry
-from app.scanner import get_last_scan_result, get_scan_progress, scan_all_devices
+from app.scanner import get_available_quarters, get_last_scan_result, get_scan_progress, scan_all_devices
 
 router = APIRouter(prefix="/api/scan", tags=["scan"])
 
@@ -146,3 +146,14 @@ async def list_scan_folders() -> dict:
             subfolders = [{"path": d.path, "name": "(root — flat folder)"}]
         devices.append({"label": d.label, "root": d.path, "subfolders": subfolders})
     return {"devices": devices}
+
+
+@router.get("/available-quarters")
+async def available_quarters() -> dict:
+    """Return list of quarters that have media files in backup locations (FR-01c†).
+
+    Scans backup folders to find quarters with content, enabling smart filtering
+    of quarter preset buttons on the scan page. Returns quarters sorted newest first.
+    """
+    quarters = get_available_quarters()
+    return {"quarters": quarters}
