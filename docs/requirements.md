@@ -22,6 +22,7 @@ A Python application running in a Docker container on a Synology NAS. It moves p
 ### 3.1 Source Discovery
 
 - **FR-01** The application shall scan all configured backup folders at startup and identify media files (photos and videos) that have not yet been processed.
+- **FR-01c†** The application shall support filtering scans by date range, with preset quarter buttons from current quarter back to Q1 2022.
 - **FR-02** The application shall support multiple source devices, each with its own dedicated backup root folder.
 - **FR-03** The application shall recurse into daily subfolders within each device backup folder.
 - **FR-04** The application shall distinguish between photo file types (JPEG, PNG, HEIC, RAW variants, etc.) and video file types (MP4, MOV, MKV, AVI, etc.).

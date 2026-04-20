@@ -22,7 +22,7 @@ A Python web application that runs in a Docker container on a Synology NAS. It s
 
 ### Scan
 - **Selective folder scanning** — expand "Choose folders to scan" to cherry-pick individual sub-folders per device. Uncheck any you want to skip; the rest are scanned normally.
-- **Quarter & date presets** — one-click quarter buttons (current quarter plus the last four) narrow the scan to files modified in that period, drastically reducing scan time on large backup folders. Free-form From/To date fields are also available.
+- **Quarter & date presets** — one-click quarter buttons from current quarter back to Q1 2022 narrow the scan to files modified in that period, drastically reducing scan time on large backup folders. Free-form From/To date fields are also available.
 - **Two-phase progress bar** — the scanner first counts all candidate files, then processes them one by one. A live progress bar (percentage, current filename, found count) updates every 2 seconds via HTMX polling — no full-page refresh.- **Cancel scan** — a ✕ Cancel button appears inside the live progress panel while a scan is running. Clicking it sets a cancellation flag that the scanner checks between files; the scan stops cleanly after the current file without restarting the server.
 - **Per-device file counts** — the completed-scan banner shows how many new files were found per device (e.g. “Alice’s Phone: 47 | Bob’s Phone: 12”), making it immediately clear whether a device actually synced anything new.- **Detailed logging** — every file examined is logged at DEBUG level; per-device summaries at INFO level.
 - **Automatic skip of processed files** — an SQLite database records every moved file so it is never re-presented on a subsequent scan.

@@ -58,7 +58,7 @@
   allBtn.onclick     = () => setDateFilter(null, null, allBtn);
   container.appendChild(allBtn);
 
-  for (let i = 0; i < 5; i++) {
+  while (yr > 2022 || (yr === 2022 && q >= 1)) {
     const [m1, m2] = qMonths[q - 1];
     const from = `${yr}-${String(m1).padStart(2,'0')}-01`;
     const to   = `${yr}-${String(m2).padStart(2,'0')}-${new Date(yr, m2, 0).getDate()}`;
@@ -67,7 +67,8 @@
     btn.textContent = `Q${q} ${yr}`;
     btn.onclick     = () => setDateFilter(from, to, btn);
     container.appendChild(btn);
-    if (--q === 0) { q = 4; yr--; }
+    q--;
+    if (q === 0) { q = 4; yr--; }
   }
 })();
 
