@@ -50,6 +50,7 @@ A Python application running in a Docker container on a Synology NAS. It moves p
 - **FR-16** The application shall log every file operation (moved, skipped, or error) with source path, destination path, and reason.
 - **FR-17** The application shall allow the user to permanently delete source files from within the web UI, individually or in bulk, after an explicit confirmation step.
 - **FR-18†** Deletion shall also be available from within the full-screen media preview, with automatic advancement to the next file after deletion.
+- **FR-18a†** The application shall allow the user to delete duplicate backup files after confirmation to prevent them from reappearing in future scans and re-triggering duplicate detection.
 
 *† New requirement added during implementation.*
 

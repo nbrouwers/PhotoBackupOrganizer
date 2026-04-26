@@ -166,7 +166,7 @@ Two public entry points:
 |---|---|---|
 | `routers/scan.py` | `/api/scan` | `POST /` trigger scan, `GET /status`, `GET /result`, `GET /folders`, `GET /available-quarters`, `POST /cancel` |
 | `routers/destinations.py` | `/api/destinations` | `GET /folder-children`, `GET /folder-count`, `POST /ensure-folder` |
-| `routers/move.py` | `/api/move` | `POST /dry-run`, `POST /execute`, `POST /delete`, `GET /log`, `GET /log/rows` |
+| `routers/move.py` | `/api/move` | `POST /dry-run`, `POST /execute`, `POST /delete`, `POST /delete-duplicates`, `GET /log`, `GET /log/rows` |
 | `routers/ui.py` | `/` | Page routes (Jinja2), `GET /thumbnails`, `GET /video-preview`, `GET /media`, `GET /api/geocode` |
 
 All request bodies are validated with **Pydantic** models. HTML-fragment endpoints
@@ -318,3 +318,4 @@ Bind mounts expected at runtime:
 | Cooperative scan cancellation | Simple flag checked between files; no threads or OS signals needed |
 | aiosqlite | Async-safe; persists processed-file state and GPS cache across container restarts |
 | HTMX + Jinja2 (no JS build) | Zero build toolchain; lightweight; easy to maintain on a NAS |
+| Delete-duplicates endpoint | Allows user to remove duplicate backup files after confirmation; prevents re-detection in future scans |

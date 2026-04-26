@@ -25,7 +25,7 @@ from app.duplicates import is_duplicate
 
 logger = logging.getLogger(__name__)
 
-MoveAction = Literal["move", "skip_duplicate", "error"]
+MoveAction = Literal["move", "skip_duplicate", "deleted_duplicate", "error"]
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +74,17 @@ class BatchResult:
         for f in self.files:
             counts[f.action] = counts.get(f.action, 0) + 1
         return counts
+
+
+@dataclass
+class DeleteDuplicateResult:
+    """Result of deleting duplicate backup files after user confirmation."""
+
+    files: list[FileResult] = field(default_factory=list)
+
+    @property
+    def summary(self) -> dict:
+        return {"deleted": sum(1 for f in self.files if f.action == "deleted_duplicate")}
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +272,68 @@ async def execute_batch(assignments: list[MoveAssignment]) -> BatchResult:
             file_result = FileResult(
                 src=assignment.src_path,
                 final_dest=str(dest_dir / original_filename),
+                action="error",
+                original_filename=original_filename,
+                final_filename=original_filename,
+                error_message=str(exc),
+            )
+
+        result.files.append(file_result)
+        _write_audit_entry(file_result)
+
+    return result
+
+
+async def delete_duplicates_batch(assignments: list[MoveAssignment]) -> DeleteDuplicateResult:
+    """Delete duplicate files from backup locations after user confirmation.
+
+    This is called AFTER a dry-run or execute operation that returned ``skip_duplicate``
+    actions. The user reviews which duplicates they want to delete, confirms, and this
+    function removes those backup files.
+
+    Args:
+        assignments: List of MoveAssignments where the source files were skipped as duplicates.
+
+    Returns:
+        DeleteDuplicateResult with per-file deletion status.
+    """
+    result = DeleteDuplicateResult()
+
+    for assignment in assignments:
+        src = Path(assignment.src_path)
+        original_filename = src.name
+
+        try:
+            if not src.exists():
+                file_result = FileResult(
+                    src=assignment.src_path,
+                    final_dest="",
+                    action="error",
+                    original_filename=original_filename,
+                    final_filename=original_filename,
+                    conflict_note="File not found (may have already been removed)",
+                    error_message="File not found",
+                )
+                result.files.append(file_result)
+                continue
+
+            src.unlink()
+            logger.info("Deleted duplicate backup: %s", src)
+
+            file_result = FileResult(
+                src=assignment.src_path,
+                final_dest="",
+                action="deleted_duplicate",
+                original_filename=original_filename,
+                final_filename=original_filename,
+                conflict_note="Deleted after duplicate detection",
+            )
+
+        except Exception as exc:
+            logger.error("Failed to delete duplicate %s: %s", src, exc)
+            file_result = FileResult(
+                src=assignment.src_path,
+                final_dest="",
                 action="error",
                 original_filename=original_filename,
                 final_filename=original_filename,

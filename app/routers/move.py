@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from app.config import get_config
-from app.mover import MoveAssignment, dry_run_batch, execute_batch, write_log_entry
+from app.mover import MoveAssignment, dry_run_batch, execute_batch, write_log_entry, delete_duplicates_batch
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/move", tags=["move"])
@@ -42,7 +42,7 @@ def _assignment_list(req: BatchRequest) -> list[MoveAssignment]:
 def _file_result_dict(fr) -> dict:
     return {
         "src": fr.src,
-        "final_dest": fr.final_dest,
+        "final_dest": fr.final_dest or "",
         "action": fr.action,
         "original_filename": fr.original_filename,
         "final_filename": fr.final_filename,
@@ -143,6 +143,43 @@ async def delete_files(req: DeleteRequest) -> dict:
 
     deleted = sum(1 for r in results if r["status"] == "deleted")
     return {"deleted": deleted, "total": len(req.paths), "results": results}
+
+
+# ---------------------------------------------------------------------------
+# Delete duplicates endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.post("/delete-duplicates")
+async def delete_duplicates(req: BatchRequest) -> dict:
+    """Delete duplicate files from backup locations after user confirmation.
+
+    These are files that were skipped as duplicates during a move operation.
+    The user explicitly confirms they want to delete these backup files to prevent
+    them from appearing in future scans and re-triggering duplicate detection.
+    """
+    if not req.assignments:
+        raise HTTPException(status_code=422, detail="No assignments provided")
+
+    cfg = get_config()
+    allowed_roots = [Path(d.path).resolve() for d in cfg.devices]
+
+    validated_assignments = []
+    for a in req.assignments:
+        src = Path(a.src_path).resolve()
+        if any(src.is_relative_to(root) for root in allowed_roots):
+            validated_assignments.append(MoveAssignment(src_path=a.src_path, dest_dir=a.dest_dir))
+        else:
+            logger.warning("Delete duplicates attempt outside allowed roots: %s", src)
+
+    if not validated_assignments:
+        raise HTTPException(status_code=422, detail="No valid paths to delete")
+
+    result = await delete_duplicates_batch(validated_assignments)
+    return {
+        "summary": result.summary,
+        "files": [_file_result_dict(f) for f in result.files],
+    }
 
 
 # ---------------------------------------------------------------------------

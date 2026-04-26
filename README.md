@@ -51,6 +51,7 @@ A Python web application that runs in a Docker container on a Synology NAS. It s
 - **Dry-run preview** — see exactly what will happen (move / skip duplicate / error) before any file is touched.
 - **Duplicate detection** — identical files (same size + SHA-256 hash) at the destination are skipped automatically.
 - **Same-filename skip** — if a file with the same name already exists at the destination (but is not a byte-for-byte duplicate), the move is skipped to prevent accidental overwriting. The user can delete or rename the source file and retry.
+- **Delete duplicate after confirmation** — after a dry-run or execute operation that shows duplicates, the user can select those skipped files and delete them from the backup location. This prevents the same files from appearing in future scans and triggering duplicate detection again.
 - **Safe copy-then-delete** — files are written to the destination first; the source is deleted only after a successful write.
 - **Lazy folder creation** — destination folders are only created on the filesystem at the moment a file is actually moved into them. No empty folders are ever created speculatively, even when a video destination is mirrored from a photo destination.
 - **Progress bar** — the Confirm & Move button shows an animated progress bar with a file count summary while the execute request is in flight.
@@ -525,6 +526,7 @@ The application also exposes a JSON API (documented at `http://<NAS_IP>:9121/doc
 | `POST` | `/api/move/dry-run` | Simulate a batch move |
 | `POST` | `/api/move/execute` | Execute a batch move |
 | `POST` | `/api/move/delete` | Permanently delete source files by path (body: `{paths: [...]}`) |
+| `POST` | `/api/move/delete-duplicates` | Delete duplicate backup files after confirmation (body: `{assignments: [...]}`) |
 | `GET` | `/api/move/log` | Recent audit log entries |
 | `GET` | `/video-preview` | Serve a browser-compatible video preview (`?src=<path>`); 302 redirect for native codecs, H.264 transcode for HEVC |
 | `GET` | `/thumbnails` | Serve a thumbnail (`?src=<path>`) |

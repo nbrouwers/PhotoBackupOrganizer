@@ -149,6 +149,7 @@ The original stack is fully compatible with Synology NAS / DSM 7.x, with two imp
     - `POST /api/move/dry-run` — returns `DryRunResult`, no filesystem changes
     - `POST /api/move/execute` — moves files, returns `BatchResult`
     - `POST /api/move/delete` — permanently delete source files by path list
+    - `POST /api/move/delete-duplicates` — delete files from backup that were detected as duplicates during dry-run/execute; validates paths are within device roots before deletion
     - `GET /api/move/log` — recent audit log entries (JSON)
     - `GET /api/move/log/rows` — audit log as HTML rows (HTMX); accepts `?action=` substring filter so the log page can show only errors, skips, etc. without a page reload
     - Module-level `_esc()` helper shared by row rendering and filter/copy-button generation

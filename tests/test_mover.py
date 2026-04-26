@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from app.mover import MoveAssignment, dry_run_batch, execute_batch
+from app.mover import MoveAssignment, dry_run_batch, execute_batch, delete_duplicates_batch
 
 
 def _setup_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -195,3 +195,45 @@ class TestLogRowsActionFilter:
     def test_esc_helper_sanitises_html_chars(self) -> None:
         from app.routers.move import _esc
         assert _esc('<script>&') == '&lt;script&gt;&amp;'
+
+
+class TestDeleteDuplicatesBatch:
+    """Tests for delete_duplicates_batch after duplicate detection."""
+
+    @pytest.mark.asyncio
+    async def test_deletes_duplicate_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        _setup_config(tmp_path, monkeypatch)
+        src = tmp_path / "backups" / "phone" / "IMG_100.jpg"
+        _write_file(src, b"duplicate content")
+
+        result = await delete_duplicates_batch([MoveAssignment(str(src), str(tmp_path / "photos"))])
+
+        assert result.files[0].action == "deleted_duplicate"
+        assert not src.exists()  # File deleted
+
+    @pytest.mark.asyncio
+    async def test_returns_error_when_file_not_found(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        _setup_config(tmp_path, monkeypatch)
+        src = tmp_path / "backups" / "phone" / "IMG_101.jpg"
+
+        result = await delete_duplicates_batch([MoveAssignment(str(src), str(tmp_path / "photos"))])
+
+        assert result.files[0].action == "error"
+        assert "not found" in result.files[0].error_message.lower()
+
+    @pytest.mark.asyncio
+    async def test_deletes_multiple_duplicates(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        _setup_config(tmp_path, monkeypatch)
+        src1 = tmp_path / "backups" / "phone" / "IMG_102.jpg"
+        src2 = tmp_path / "backups" / "phone" / "IMG_103.jpg"
+        _write_file(src1, b"dup1")
+        _write_file(src2, b"dup2")
+
+        result = await delete_duplicates_batch([
+            MoveAssignment(str(src1), str(tmp_path / "photos")),
+            MoveAssignment(str(src2), str(tmp_path / "photos")),
+        ])
+
+        assert len(result.files) == 2
+        assert all(f.action == "deleted_duplicate" for f in result.files)
+        assert result.summary["deleted"] == 2
